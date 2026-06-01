@@ -1,0 +1,9 @@
+A 4-panel comic strip in the style of a Pixar 3D animated film, warm cinematic lighting, glossy soft-shadow render, expressive exaggerated faces. Same recurring character in every panel: a young developer with messy brown hair and a green jacket. Each panel has a small rounded label box in the TOP-LEFT corner with the panel title. 2x2 grid, 16:9.
+
+Panel 1 — label "API Key Hell": the developer slumps at a messy desk, hands clutching his head in despair, surrounded by glowing monitors full of error popups reading "API KEY", "RATE LIMIT", "402 BILLING", "$$$", tangled cables and empty coffee cups everywhere. Cold blue stressed lighting.
+
+Panel 2 — label "The Spark": a bright glowing lightbulb pops above his head, his face lights up with a huge excited grin, one finger pointing at a single Firefox browser window on screen showing a logged-in Google AI app. "just use my own session!" energy, warm light breaking in.
+
+Panel 3 — label "GAIA Unleashed": he types one command in a terminal; a friendly cute cartoon fox mascot (stealth Firefox) sits on the browser and drives it, and a magical stream of freshly generated media flies out across the panel — a picture, a film clip, a music note, a slide deck, and a podcast microphone with a sound wave — all glowing with rainbow neon trails.
+
+Panel 4 — label "Creator Nirvana": the developer leans back relaxed in his chair holding a mug labeled "GAIA", calm happy smile, surrounded by floating finished outputs (an image, a video frame, a podcast mic, a slide deck). A small friendly blue robot assistant and the little fox wave hello. Confetti, a glowing badge reading "NO API KEYS", warm golden celebratory light.

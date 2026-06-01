@@ -86,6 +86,17 @@ def _stable_fingerprint():
         return None
 
 
+def _geoip_available() -> bool:
+    """True if Camoufox can determine the public IP for geoip (needs network)."""
+    try:
+        from camoufox.ip import public_ip
+
+        public_ip()
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def make_camoufox(headless: bool = False):
     """Return an AsyncCamoufox context manager configured for a STABLE identity:
     a persistent profile (its own Google session survives across runs) and a
@@ -98,7 +109,10 @@ def make_camoufox(headless: bool = False):
     opts = dict(
         headless=headless,
         humanize=True,
-        geoip=True,
+        # geoip needs a public-IP lookup; skip it gracefully if that's
+        # unreachable (offline / flaky network) so launch doesn't crash with
+        # InvalidIP. Camoufox then uses default geo/timezone.
+        geoip=_geoip_available(),
         block_images=False,
         persistent_context=True,
         user_data_dir=str(CAMOUFOX_PROFILE_DIR),
