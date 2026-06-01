@@ -1,5 +1,9 @@
 # GAIA — Google AI Automation
 
+<p align="center">
+  <img src="assets/gaia_comic.png" alt="GAIA — automate Google's creative AI from one logged-in session" width="640">
+</p>
+
 GAIA drives Google's creative AI — **Gemini, Flow, NotebookLM** — to generate
 **text, images, video, music, slides and podcasts**, with **no API keys**: it just
 uses your **logged-in Firefox/Google session**, through **Camoufox** (an anti-detect
