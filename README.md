@@ -148,7 +148,7 @@ python3 flow_gen.py --prompt-file prompts/flow.txt --project <url-or-id> --debug
 python3 flow_gen.py --prompt "x" --explore --no-send --keep-open   # inspect the UI
 ```
 
-Key flags: `--project` (URL or bare id; default = the user's project), `--mode`
+Key flags: `--project` (URL or bare id; or set GAIA_FLOW_PROJECT), `--mode`
 (`auto`/`agent`/`classic`), `--keep-session` (don't start a fresh agent chat),
 `--timeout`, `--debug`. Output: a 720p ~10s `.mp4` in `output/`. Verified: prompt →
 Approve → clip downloaded from the `labs.google/fx/api/.../media…` URL via

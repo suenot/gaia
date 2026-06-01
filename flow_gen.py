@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 import time
 from pathlib import Path
@@ -39,7 +40,8 @@ from gemini_common import (
 )
 
 ROOT = "https://labs.google/fx/tools/flow"
-DEFAULT_PROJECT = "https://labs.google/fx/tools/flow/project/80056e82-c6c2-4500-b7fb-5fe0f5829ec3"
+# Your Flow project (URL or bare id). Pass --project, or set GAIA_FLOW_PROJECT.
+DEFAULT_PROJECT = os.environ.get("GAIA_FLOW_PROJECT", "")
 
 AGENT_EDITOR = "div[role='textbox'][contenteditable='true']"
 
@@ -348,7 +350,10 @@ async def run(args) -> int:
 
     profile_path, cookies = load_cookies(args.profile)
     project = args.project or DEFAULT_PROJECT
-    if project and not project.startswith("http"):
+    if not project:
+        log("ERROR: no Flow project. Pass --project <url-or-id> or set GAIA_FLOW_PROJECT.")
+        return 2
+    if not project.startswith("http"):
         project = f"{ROOT}/project/{project}"
 
     prompt = args.prompt
@@ -455,7 +460,7 @@ def parse_args(argv: Optional[List[str]] = None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--prompt", default="", help="Inline prompt")
     p.add_argument("--prompt-file", default="", help="Read prompt from file")
-    p.add_argument("--project", default="", help="Flow project URL or bare id (default: the user's project)")
+    p.add_argument("--project", default="", help="Flow project URL or bare id (or set GAIA_FLOW_PROJECT)")
     p.add_argument("--image", default="", help="Source image for image->video (optional, experimental)")
     p.add_argument("--mode", choices=["auto", "agent", "classic"], default="auto",
                    help="Generation path (default auto: classic bar if present, else Omni agent)")
