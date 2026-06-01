@@ -230,3 +230,8 @@ Audio Overview (`.m4a`) and a 5-page Slide Deck (`.pdf`).
 - If you see "not logged in", the chosen profile's Google session may be expired
   or it's a different account — pick another `--profile`.
 - Keep the session/cookies private; they grant access to the Google account.
+
+## License
+
+[MIT](LICENSE) — fork it and adapt to your brand with any AI agent. See the
+**Disclaimer** above: personal/educational use, your own account, at your own risk.
