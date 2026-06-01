@@ -1,0 +1,3 @@
+HRP — дендрограмма и quasi-диагонализация
+
+A premium dark-themed data visualization of Hierarchical Risk Parity internals. Left panel: a glowing dendrogram tree where crypto asset nodes cluster into branches by correlation — tightly correlated pairs merge first, uncorrelated assets merge last. Right panel: a covariance matrix heatmap that starts scrambled then rearranges its rows and columns to push bright diagonal blocks into alignment, with a glowing quasi-diagonal pattern emerging. An arrow of recursively splitting bisection lines overlays the right panel, dividing the matrix top-down into L and R halves. Deep navy background, cyan and teal neon, warm amber diagonal highlights. 16:9 aspect ratio. No text.

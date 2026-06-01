@@ -1,0 +1,7 @@
+output/
+debug/
+__pycache__/
+*.pyc
+.venv/
+.camoufox_profile/
+.camoufox_fp.pkl
