@@ -1,18 +1,35 @@
 # GAIA — Google AI Automation
 
-GAIA drives Google's creative AI tools under your **authorized Google session**,
-through **Camoufox** (an anti-detect Firefox build) + Playwright:
+GAIA drives Google's creative AI — **Gemini, Flow, NotebookLM** — to generate
+**text, images, video, music, slides and podcasts**, with **no API keys**: it just
+uses your **logged-in Firefox/Google session**, through **Camoufox** (an anti-detect
+Firefox build) + Playwright.
 
 - **Gemini** — text→image, image→video and text→video (Veo)
-- **Flow** — Veo film clips inside a Flow project (Omni agent)
+- **Flow** — Veo film clips in a Flow project (Nano Banana edits, Veo 3, Omni agent)
 - **NotebookLM** — create notebooks, add/discover sources, generate & download
-  Audio Overviews and Slide Decks (with output language & steering prompts)
+  **Audio Overviews (podcasts)** and **Slide Decks** in any language, with steering prompts
 - **Music** — Gemini "Create music" / Labs MusicFX *(experimental)*
 
 It does *not* copy your Firefox profile into Camoufox. It reads the Google cookies
 from Firefox's `cookies.sqlite` once to bootstrap a **persistent, stable Camoufox
 profile** (`.camoufox_profile/`) with a **pinned fingerprint** — after that GAIA
 keeps its own session and your Firefox login is never touched again.
+
+## ⚠️ Disclaimer
+
+> [!CAUTION]
+> **For personal and educational use only.** GAIA automates **your own**
+> authenticated Google session. It is **NOT affiliated with, authorized by, or
+> endorsed by Google**, and automating Google products may violate their Terms of
+> Service — **use it at your own risk**: it can get your Google account
+> rate-limited or **suspended**. Use only your own account, **one session at a
+> time**; do **NOT** run it as a hosted service, a bot farm, or against accounts
+> you do not own. Provided **AS IS, without warranty of any kind**.
+>
+> 🇷🇺 Только для личного и образовательного использования: вы автоматизируете
+> собственную сессию Google и действуете на свой страх и риск (возможны
+> ограничения или блокировка аккаунта).
 
 ## Setup
 
@@ -35,32 +52,18 @@ python3 login_camoufox.py --bootstrap
 
 | File | Purpose |
 |------|---------|
-| `gemini_image_gen.py` | Text → image: log in via cookies, send prompt, download image(s) — **verified** |
-| `gemini_video_gen.py` | Image→video **and** text→video (Veo): fresh chat, optional image + prompt, download `.mp4` — **verified** |
+| `login_camoufox.py`   | **One-time setup**: bootstrap the persistent Camoufox session (from Firefox cookies or a manual sign-in) |
+| `gemini_image_gen.py` | Text → image: send prompt, download image(s) — **verified** |
+| `gemini_video_gen.py` | Image→video **and** text→video (Veo): optional image + prompt, download `.mp4` — **verified** |
 | `flow_gen.py`         | Google **Flow** (Veo): drive the Omni agent in a project (prompt → Approve → clip), download `.mp4` — **verified** |
+| `notebooklm_gen.py`   | NotebookLM: create notebook, add/discover sources, generate & download **Audio Overview + Slide Deck** in any language — **verified** |
 | `music_gen.py`        | Music: Gemini "Create music" / Labs MusicFX — *built, not yet verified end-to-end* |
-| `notebooklm_gen.py`   | NotebookLM: create notebook, add source, Audio Overview — *create+source work; audio gen needs the Studio tab* |
-| `gemini_common.py`    | Shared helpers: cookies, launch+login, prompt editor, screenshots |
+| `gemini_common.py`    | Shared helpers: persistent launch, cookies, prompt editor, screenshots |
 | `cookies_firefox.py`  | Extract & convert Firefox cookies → Playwright format |
 | `explore.py`          | Dev tool: deep-walk the DOM (incl. shadow roots) to find selectors if the UI changes |
-| `prompts/*.txt`       | Example prompts (image, motion, text-video) |
-| `output/`             | Saved images (`*.png`) and videos (`*.mp4`) |
+| `prompts/*.txt`       | Example prompts (image, motion, text-video, flow) |
+| `output/`             | Saved media (images, videos, audio, slide-deck PDFs) |
 | `debug/`              | Step screenshots (only with `--debug`) |
-
-> **Single-session rule:** these scripts reuse ONE Google account. Run only **one**
-> Camoufox at a time — never several in parallel. Each Camoufox has a different
-> random fingerprint, so concurrent sessions look like the account being used from
-> many new devices at once and Google will invalidate the session (logging you out
-> of Firefox too).
-
-## Requirements
-
-```bash
-pip install -r requirements.txt
-python3 -m camoufox fetch    # one-time: download the Camoufox browser binary
-```
-
-Already satisfied on this machine (Camoufox 0.4.11, browser 135.0.1-beta.24).
 
 ## Usage
 
@@ -154,6 +157,33 @@ Key flags: `--project` (URL or bare id; or set GAIA_FLOW_PROJECT), `--mode`
 Approve → clip downloaded from the `labs.google/fx/api/.../media…` URL via
 `context.request`.
 
+## NotebookLM (podcasts & slide decks)
+
+`notebooklm_gen.py` creates a notebook, adds sources, and generates **Audio
+Overviews (podcasts)** and **Slide Decks** via their Customize popovers — in any
+output language and with a steering prompt — then downloads the `.m4a` / `.pdf`.
+
+```bash
+# Paste text as a source, make a Russian audio overview with a focus prompt
+python3 notebooklm_gen.py --source-text "..." --audio --language Russian \
+    --instructions "Focus on the engineering challenges"
+
+# Let NotebookLM web-search its own sources, then make audio + slides
+python3 notebooklm_gen.py --discover "history of the Voyager program" --audio --slides
+
+# Add files as sources (PDF/audio/etc. uploaded; .txt/.md/.csv pasted)
+python3 notebooklm_gen.py --source-file paper.pdf --slides --slides-prompt "10 concise slides"
+
+# Operate on an existing notebook / just re-download ready artifacts
+python3 notebooklm_gen.py --notebook <url> --download-only --audio --slides
+```
+
+Sources: `--source-text`, `--source-url` (×N), `--source-file` (×N),
+`--discover "query"`. Artifacts: `--audio`, `--slides`, `--language`,
+`--instructions`, `--slides-prompt`, `--audio-format` (Deep Dive/Brief/Critique/
+Debate), `--audio-length` (Short/Default/Long). Verified: an ~18-min Russian
+Audio Overview (`.m4a`) and a 5-page Slide Deck (`.pdf`).
+
 ## How it works
 
 1. **Cookies** — `cookies_firefox.py` copies `cookies.sqlite` (+ WAL journal) so it
@@ -162,8 +192,11 @@ Approve → clip downloaded from the `labs.google/fx/api/.../media…` URL via
    converted to seconds), and all cookies are mapped to `SameSite=Lax` (every
    `*.google.com` host is same-site for the Gemini app, so Lax is always sent and
    avoids Playwright's `SameSite=None`-requires-`Secure` rule).
-2. **Launch** — `AsyncCamoufox(os="macos", humanize=True, geoip=True)`; cookies are
-   added to a fresh context before navigating to `gemini.google.com/app`.
+2. **Launch** — `make_camoufox()` opens a **persistent** Camoufox context with a
+   **pinned fingerprint** (`.camoufox_profile/` + `.camoufox_fp.pkl`). Firefox
+   cookies are injected only to bootstrap the first run; afterwards GAIA reuses its
+   own session, so the same device is presented every time and your Firefox login
+   is never disturbed again.
 3. **Prompt** — the Quill `contenteditable` editor is filled via Playwright
    `fill()` (bypasses the entry-animation overlay that intercepts real clicks and
    handles multi-line without an early send), then `Enter` submits.
