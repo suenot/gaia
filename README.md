@@ -1,7 +1,7 @@
 # GAIA — Google AI Automation
 
 <p align="center">
-  <img src="assets/gaia_comic.png" alt="GAIA — automate Google's creative AI from one logged-in session" width="640">
+  <img src="assets/gaia_comic.png" alt="GAIA — automate Google's creative AI from one logged-in session" width="820">
 </p>
 
 GAIA drives Google's creative AI — **Gemini, Flow, NotebookLM** — to generate
