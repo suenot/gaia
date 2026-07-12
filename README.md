@@ -35,9 +35,21 @@ keeps its own session and your Firefox login is never touched again.
 > собственную сессию Google и действуете на свой страх и риск (возможны
 > ограничения или блокировка аккаунта).
 
+## Requirements
+
+> [!IMPORTANT]
+> **Use Python 3.11, 3.12, or 3.13 — not 3.14.** Camoufox `0.4.11` (the latest
+> release) supports **Playwright ≤ 1.51** only. On Python 3.14, pip refuses to
+> install a compatible Playwright (the required old `greenlet` won't build), and
+> forcing a newer Playwright (1.6x) breaks the browser launch with
+> `Browser.setDefaultViewport ... "isMobile" ... not described in this scheme`.
+> `requirements.txt` pins Playwright to a working range; create the venv with a
+> supported interpreter, e.g. `python3.11 -m venv venv`.
+
 ## Setup
 
 ```bash
+python3.11 -m venv venv && source venv/bin/activate   # Python 3.11–3.13, NOT 3.14
 pip install -r requirements.txt
 python3 -m camoufox fetch            # one-time: download the Camoufox browser
 

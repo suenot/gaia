@@ -5,3 +5,4 @@ __pycache__/
 .venv/
 .camoufox_profile/
 .camoufox_fp.pkl
+venv/

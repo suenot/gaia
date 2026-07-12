@@ -1,2 +1,4 @@
-camoufox>=0.4.11
-playwright>=1.40
+# Python 3.11–3.13 required (NOT 3.14): camoufox 0.4.11 supports Playwright <=1.51,
+# and the compatible greenlet does not build on 3.14. See README "Requirements".
+camoufox[geoip]>=0.4.11
+playwright>=1.40,<=1.51
