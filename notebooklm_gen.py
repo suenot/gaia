@@ -371,6 +371,16 @@ async def _set_language(page, language: str, debug: bool = False) -> None:
             continue
     if trigger is None:
         log("  (language dropdown not found; leaving default)"); return
+    names = LANG_ALIASES.get(language.lower(), [language])
+    # Skip the whole open-select-click dance if the target language is already
+    # the current value — the dropdown shows it as the trigger's text.
+    try:
+        current = (await trigger.inner_text()).strip()
+    except Exception:  # noqa: BLE001
+        current = ""
+    if current and any(current.lower() == n.lower() for n in names):
+        log(f"  language already {current}; skipping select")
+        return
     try:
         await trigger.click(timeout=3000)
         await page.wait_for_timeout(900)
@@ -383,7 +393,6 @@ async def _set_language(page, language: str, debug: bool = False) -> None:
                 log(f"  language options: {opts}")
             except Exception:  # noqa: BLE001
                 pass
-        names = LANG_ALIASES.get(language.lower(), [language])
         for name in names:
             opt = page.locator(f"mat-option:has-text('{name}'), [role='option']:has-text('{name}')")
             if await opt.count() > 0:
