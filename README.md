@@ -73,6 +73,7 @@ python3 login_camoufox.py --bootstrap
 | `gemini_video_gen.py` | Image→video **and** text→video (Veo): optional image + prompt, download `.mp4` — **verified** |
 | `flow_gen.py`         | Google **Flow** (Veo): drive the Omni agent in a project (prompt → Approve → clip), download `.mp4` — **verified** |
 | `notebooklm_gen.py`   | NotebookLM: create notebook, add/discover sources, generate & download **Audio Overview + Slide Deck** in any language — **verified** |
+| `youtube_upload.py`   | YouTube Studio: upload a video with title/description/tags/thumbnail, audience + visibility, from a `video_maker` metadata JSON — no Data API |
 | `music_gen.py`        | Music: Gemini "Create music" / Labs MusicFX — *built, not yet verified end-to-end* |
 | `gemini_common.py`    | Shared helpers: persistent launch, cookies, prompt editor, screenshots |
 | `cookies_firefox.py`  | Extract & convert Firefox cookies → Playwright format |
@@ -199,6 +200,38 @@ Sources: `--source-text`, `--source-url` (×N), `--source-file` (×N),
 `--instructions`, `--slides-prompt`, `--audio-format` (Deep Dive/Brief/Critique/
 Debate), `--audio-length` (Short/Default/Long). Verified: an ~18-min Russian
 Audio Overview (`.m4a`) and a 5-page Slide Deck (`.pdf`).
+
+## YouTube upload (no Data API)
+
+`youtube_upload.py` drives **YouTube Studio** (studio.youtube.com) through the same
+logged-in Camoufox session — Create → Upload videos → fill Details → set
+visibility → Save. No Data API, no OAuth, no API keys. Point `--metadata` at the
+JSON that `video_maker` emits (`{title, description, tags[]}`); explicit flags
+override it. **Default visibility is `private`** — nothing goes public unless you
+pass `--visibility public`.
+
+```bash
+# Upload a video_maker bundle as a private draft (safe default)
+python3 youtube_upload.py \
+    --video     ../marketmaker/video_maker/output/SLUG/SLUG.mp4 \
+    --metadata  ../marketmaker/video_maker/output/SLUG/SLUG_metadata.json \
+    --thumbnail ../marketmaker/video_maker/output/SLUG/SLUG_thumbnail.png \
+    --visibility private --debug
+
+# Fully manual, unlisted
+python3 youtube_upload.py --video clip.mp4 --title "Hi" \
+    --description "..." --tags "a,b,c" --visibility unlisted
+```
+
+Flags: `--video` (required), `--metadata`, `--thumbnail`, `--title`,
+`--description`, `--tags` (comma-separated), `--visibility` (private/unlisted/
+public), `--made-for-kids` (default: not for kids), `--timeout`, `--headless`,
+`--keep-open`, `--debug`. Exit codes: `0` ok · `2` bad args · `3` not logged in ·
+`4` couldn't start upload · `5` details step failed · `6` couldn't finish.
+
+> Studio's web-component UI changes often; if a step misses, run with `--debug`
+> and inspect `debug/yt_*.png` — each step is screenshotted, and failures emit a
+> shadow-DOM deep-dump of the live controls.
 
 ## How it works
 
