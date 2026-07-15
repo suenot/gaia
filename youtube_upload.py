@@ -54,7 +54,8 @@ Usage
       --tags "a,b,c" --visibility unlisted
 
 Exit codes: 0 ok · 2 bad args · 3 not logged in · 4 could not start upload ·
-5 details step failed · 6 could not finish/publish.
+5 details step failed · 6 could not finish/publish · 7 blocked by a Google
+"Verify it's you" challenge (complete it once in the window with --keep-open).
 """
 from __future__ import annotations
 
@@ -243,23 +244,98 @@ def _cap_tags(tags: List[str], budget: int = 480) -> List[str]:
 # --------------------------------------------------------------------------- #
 # Upload flow
 # --------------------------------------------------------------------------- #
+# Studio dialogs render inside shadow DOM, which document.body.innerText does NOT
+# capture — walk light + shadow trees to read the challenge text.
+JS_ALL_TEXT = r"""
+() => {
+  const acc=[]; const seen=new Set();
+  function walk(root){
+    if(!root||seen.has(root))return; seen.add(root);
+    const kids=root.childNodes||[];
+    for(const n of kids){
+      if(n.nodeType===3){ const t=(n.textContent||'').trim(); if(t)acc.push(t); }
+      else if(n.nodeType===1){ if(n.shadowRoot) walk(n.shadowRoot); walk(n); }
+    }
+  }
+  walk(document.body);
+  return acc.join(' ').toLowerCase();
+}
+"""
+
+
+async def verify_gate_present(page) -> bool:
+    """True if Google's 'Verify it's you' identity challenge is on screen."""
+    try:
+        text = await page.evaluate(JS_ALL_TEXT)
+    except Exception:  # noqa: BLE001
+        text = ""
+    return ("verify it's you" in text
+            or "verify it’s you" in text
+            or "confirm it's really you" in text
+            or "confirm it’s really you" in text)
+
+
+async def dismiss_overlays(page) -> None:
+    """Close 'What's new' / announcement / cookie modals that overlay the
+    dashboard and intercept the upload controls."""
+    for txt in ("Got it", "Dismiss", "No thanks", "Skip", "Not now",
+                "Continue", "I agree", "Accept all"):
+        try:
+            b = page.locator(
+                f"ytcp-button:has-text('{txt}'), button:has-text('{txt}')")
+            if await b.count() > 0 and await b.first.is_visible():
+                await b.first.click(timeout=1500)
+                await page.wait_for_timeout(400)
+        except Exception:  # noqa: BLE001
+            continue
+
+
 async def open_upload_dialog(page, video: Path, debug: bool) -> bool:
-    """Open the upload dialog and feed it the video file."""
-    await click_text(page, ["Create"], timeout_ms=8000)
-    await page.wait_for_timeout(800)
-    await click_text(page, ["Upload video"], timeout_ms=5000)
+    """Open the upload dialog and feed it the (hidden) video file input."""
+    await dismiss_overlays(page)
+
+    # The topbar / dashboard exposes a direct "Upload videos" control that opens
+    # the uploads dialog straight away — more reliable than the Create menu.
+    opened = False
+    for sel in ("ytcp-icon-button#upload-icon",
+                "ytcp-button#upload-button",
+                "button[aria-label='Upload videos']"):
+        loc = page.locator(sel)
+        try:
+            if await loc.count() > 0 and await loc.first.is_visible():
+                await loc.first.click(timeout=4000)
+                opened = True
+                break
+        except Exception:  # noqa: BLE001
+            continue
+    if not opened:
+        await click_text(page, ["Create"], timeout_ms=8000)
+        await page.wait_for_timeout(800)
+        opened = await click_text(page, ["Upload video"], timeout_ms=5000)
+
     await page.wait_for_timeout(1500)
+    await dismiss_overlays(page)
     await shot(page, "yt_02_upload_dialog", debug)
 
-    file_input = await _first_visible_input(page)
+    # The <input type=file> inside the uploads dialog is hidden (zero-sized);
+    # set_input_files works on it directly, so wait for it to EXIST, not to be
+    # visible.
+    file_input = None
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        loc = page.locator(
+            "ytcp-uploads-dialog input[type='file'], input[type='file']")
+        try:
+            if await loc.count() > 0:
+                file_input = loc.first
+                break
+        except Exception:  # noqa: BLE001
+            pass
+        await page.wait_for_timeout(500)
     if file_input is None:
-        # The <input type=file> is often present but zero-sized; grab it anyway.
-        loc = page.locator("input[type='file']")
-        if await loc.count() == 0:
-            log("  no file input found for upload")
-            await dump_ui(page, "no file input")
-            return False
-        file_input = loc.first
+        log("  no file input found for upload")
+        await dump_ui(page, "no file input")
+        return False
     try:
         await file_input.set_input_files(str(video))
         log(f"  selected video file: {video.name}")
@@ -269,17 +345,6 @@ async def open_upload_dialog(page, video: Path, debug: bool) -> bool:
     await page.wait_for_timeout(4000)
     await shot(page, "yt_03_uploading", debug)
     return True
-
-
-async def _first_visible_input(page):
-    loc = page.locator("input[type='file']")
-    try:
-        for i in range(await loc.count()):
-            if await loc.nth(i).is_visible():
-                return loc.nth(i)
-    except Exception:  # noqa: BLE001
-        pass
-    return None
 
 
 async def wait_details_ready(page, timeout_s: int, debug: bool) -> bool:
@@ -478,6 +543,31 @@ async def run(args) -> int:
                 await hold(page)
             return 3
 
+        # Google may interrupt sensitive actions (upload) with a "Verify it's
+        # you" identity challenge. It cannot be auto-bypassed — the human must
+        # complete it once in the window; the persistent profile is trusted
+        # afterwards.
+        if await verify_gate_present(page):
+            log("BLOCKED: Google 'Verify it's you' security challenge is up.")
+            await shot(page, "yt_verify_gate", True)
+            if not args.keep_open:
+                log("  Re-run with --keep-open and complete the verification "
+                    "in the Camoufox window; then it won't ask again.")
+                return 7
+            log("  Complete the verification in the window — waiting up to "
+                f"{args.verify_wait}s...")
+            await click_text(page, ["Next", "Continue"], timeout_ms=4000)
+            deadline = time.time() + args.verify_wait
+            while time.time() < deadline and await verify_gate_present(page):
+                await page.wait_for_timeout(3000)
+            if await verify_gate_present(page):
+                log("  Still gated after wait; aborting.")
+                await hold(page)
+                return 7
+            log("  Verification cleared — continuing.")
+            await goto_retry(page, STUDIO_URL)
+            await page.wait_for_timeout(3000)
+
         if not await open_upload_dialog(page, video, args.debug):
             if args.keep_open:
                 await hold(page)
@@ -523,6 +613,9 @@ def parse_args(argv=None):
                    help="Mark as made for kids (default: NOT made for kids)")
     p.add_argument("--timeout", type=int, default=120,
                    help="Max seconds to wait for the Details step (default 120)")
+    p.add_argument("--verify-wait", type=int, default=600,
+                   help="Seconds to wait for you to clear a 'Verify it's you' "
+                        "challenge in the window (with --keep-open; default 600)")
     p.add_argument("--headless", action="store_true")
     p.add_argument("--keep-open", action="store_true",
                    help="Leave the browser open at the end (Ctrl+C to quit)")
