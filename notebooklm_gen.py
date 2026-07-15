@@ -488,7 +488,7 @@ async def wait_artifact_ready(page, kind: str, timeout_s: int, debug: bool) -> b
         # still generating). A ready SLIDE deck no longer shows its "Generating
         # Slide Deck" placeholder and exposes an artifact More/open control.
         if kind == "audio":
-            ready = await page.locator("button[aria-label='Play']").count() > 0
+            ready = await page.locator(PLAY_SEL).count() > 0
         else:
             try:
                 body = (await page.evaluate("() => document.body.innerText || ''")).lower()
@@ -539,7 +539,7 @@ def _ext(kind: str, ctype: str, src: str) -> str:
 async def _play_button_rows(page) -> list:
     """Y-centres of all visible Play buttons (each marks an *audio* artifact row)."""
     ys = []
-    play = page.locator("button[aria-label='Play']")
+    play = page.locator(PLAY_SEL)
     for i in range(await play.count()):
         try:
             if not await play.nth(i).is_visible():
@@ -552,6 +552,11 @@ async def _play_button_rows(page) -> list:
     return ys
 
 
+# The audio play control's aria-label varies across NotebookLM UI revisions
+# ("Play" on the Studio card, "Play audio" on the expanded player).
+PLAY_SEL = "button[aria-label='Play'], button[aria-label='Play audio']"
+
+
 async def _artifact_more_button(page, kind: str):
     """Return the More(⋮) button of the wanted *artifact card* in the Studio panel.
 
@@ -559,9 +564,21 @@ async def _artifact_more_button(page, kind: str):
     that is NOT on the same row as ANY Play button (every audio card has its own
     Play, so excluding all Play rows leaves the non-audio artifacts)."""
     if kind == "audio":
-        play = page.locator("button[aria-label='Play']")
+        # The expanded audio player exposes its own overflow button whose
+        # aria-label is "See more options for audio player" (not "More").
+        for lbl in ("See more options for audio player",
+                    "More options for Audio Overview", "More"):
+            m = page.locator(f"button[aria-label='{lbl}']")
+            try:
+                if await m.count() > 0 and await m.first.is_visible():
+                    return m.first
+            except Exception:  # noqa: BLE001
+                continue
+        play = page.locator(PLAY_SEL)
         if await play.count() > 0:
-            more = play.first.locator("xpath=following::button[@aria-label='More'][1]")
+            more = play.first.locator(
+                "xpath=following::button[@aria-label='More' or "
+                "@aria-label='See more options for audio player'][1]")
             if await more.count() > 0:
                 return more.first
         return None
@@ -625,7 +642,7 @@ async def _download_via_audio_src(page, stamp: str) -> Optional[Path]:
     (context.request for http, in-page fetch for blob:). No browser download, so
     the Camoufox 'could not be saved' temp dialog never appears."""
     try:
-        play = page.locator("button[aria-label='Play']")
+        play = page.locator(PLAY_SEL)
         if await play.count() > 0:
             await play.first.click(timeout=4000)
             await page.wait_for_timeout(3000)
@@ -671,7 +688,9 @@ async def _download_via_more_menu(page, kind: str, stamp: str, debug: bool) -> O
             if debug:
                 await dump_ui(page, f"{kind} more-menu")
             items = (["Download PDF", "Download PowerPoint", "Download"]
-                     if kind == "slides" else ["Download"])
+                     if kind == "slides"
+                     else ["Download audio", "Download .m4a", "Download m4a",
+                           "Download"])
             if not await click_text(page, items):
                 raise RuntimeError("no Download item in More menu")
             await page.wait_for_timeout(600)
