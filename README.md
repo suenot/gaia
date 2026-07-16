@@ -15,6 +15,22 @@ Firefox build) + Playwright.
   **Audio Overviews (podcasts)** and **Slide Decks** in any language, with steering prompts
 - **Music** — Gemini "Create music" / Labs MusicFX *(experimental)*
 
+## 🏭 The Content Factory
+
+GAIA is **stage 1** of an automated pipeline that turns a **blog article into a
+published YouTube video** — no API keys, driven end-to-end through logged-in
+browser sessions (Camoufox) and local media tooling.
+
+| # | Stage | Repo | What it does |
+|---|-------|------|--------------|
+| **1** | **Generate** | **[gaia](https://github.com/suenot/gaia)** ⬅ *this repo* | Drive NotebookLM / Gemini / Flow from a logged-in session → audio overview + slide deck |
+| 2 | Build | [video-maker](https://github.com/suenot/video-maker) | Audio narration + slide-deck PDF → synced MP4 (+ SRT, thumbnail) |
+| 3 | Describe | [video-metadata](https://github.com/suenot/video-metadata) | Video + article → YouTube title / description / tags / chapter timestamps |
+| 4 | Publish | [video-publisher](https://github.com/suenot/video-publisher) | Drive YouTube Studio → upload with metadata, channel switch, visibility |
+
+**Flow:** `article → gaia → video-maker → video-metadata → video-publisher → YouTube`
+(the published video is then embedded back into the blog article).
+
 It does *not* copy your Firefox profile into Camoufox. It reads the Google cookies
 from Firefox's `cookies.sqlite` once to bootstrap a **persistent, stable Camoufox
 profile** (`.camoufox_profile/`) with a **pinned fingerprint** — after that GAIA
