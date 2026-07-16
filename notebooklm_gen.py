@@ -816,10 +816,122 @@ async def run(args) -> int:
             log(f"Done. Saved: {', '.join(str(p) for p in saved)}")
         else:
             log("No artifacts downloaded. See debug/nlm_*.png.")
+
+        checks_ok = run_slide_checks(saved, args)
+
         await shot(page, "nlm_09_final", args.debug)
         if args.keep_open:
             await hold(page)
-        return 0 if saved else 8
+        if not saved:
+            return 8
+        return 0 if checks_ok else 9
+
+
+# Cyrillic letters that exist in Ukrainian but NOT in Russian. NotebookLM
+# occasionally slips one of these into a "Russian" slide deck.
+_UA_ONLY = "іїєґ"
+_UA_ONLY += _UA_ONLY.upper()
+
+
+def check_ukrainian_in_pdf(pdf_path):
+    """Scan a slide-deck PDF for Ukrainian-only Cyrillic characters. NotebookLM
+    slides carry no text layer (they are rendered images), so this OCRs each page
+    with tesseract (rus+ukr) and scans the result. Returns the list of offending
+    words (empty if clean). Requires `pdftoppm` + `tesseract` with rus & ukr."""
+    import subprocess, tempfile, glob, os
+    bad = []
+    with tempfile.TemporaryDirectory() as td:
+        try:
+            subprocess.run(["pdftoppm", "-png", "-r", "200", str(pdf_path),
+                            os.path.join(td, "pg")], check=True, capture_output=True)
+        except Exception as e:  # noqa: BLE001
+            log(f"  (Ukrainian check skipped — pdftoppm failed: {e})")
+            return []
+        for img in sorted(glob.glob(os.path.join(td, "pg*.png"))):
+            try:
+                # eng too, so Latin text (INPUT, ACTION, PPO) stays Latin instead
+                # of being mis-read as Cyrillic look-alikes.
+                out = subprocess.run(
+                    ["tesseract", img, "-", "-l", "eng+rus+ukr"],
+                    capture_output=True, text=True, check=True).stdout
+            except Exception:  # noqa: BLE001
+                continue
+            for raw in out.split():
+                word = raw.strip(".,:;()[]{}«»\"'—-–")
+                if not any(ch in _UA_ONLY for ch in word):
+                    continue
+                cyr = [c for c in word if "Ѐ" <= c <= "ӿ"]
+                # A genuine Russian/Ukrainian word: mostly Cyrillic, has a
+                # lowercase letter (skip ALL-CAPS headers, which OCR mangles).
+                if (len(word) >= 4 and len(cyr) >= 3
+                        and len(cyr) >= 0.6 * len(word)
+                        and any(c.islower() for c in cyr)):
+                    bad.append(word)
+    return sorted({w for w in bad if w})
+
+
+def check_qr_in_pdf(pdf_path):
+    """Render each PDF page and detect QR codes. Returns the list of 1-based page
+    numbers that contain a QR code (empty if none). NotebookLM invents fake/
+    decorative QR codes (usually on the last slide) — those decks are unusable.
+    Requires `pdftoppm` (poppler) and cv2."""
+    import subprocess, tempfile, glob, os, re
+    try:
+        import cv2
+    except Exception:  # noqa: BLE001
+        log("  (QR check skipped — cv2 not available)")
+        return []
+    pages = []
+    with tempfile.TemporaryDirectory() as td:
+        try:
+            subprocess.run(["pdftoppm", "-png", "-r", "150", str(pdf_path),
+                            os.path.join(td, "pg")], check=True,
+                           capture_output=True)
+        except Exception as e:  # noqa: BLE001
+            log(f"  (QR check skipped — pdftoppm failed: {e})")
+            return []
+        det = cv2.QRCodeDetector()
+        for img_path in sorted(glob.glob(os.path.join(td, "pg*.png"))):
+            img = cv2.imread(img_path)
+            if img is None:
+                continue
+            # Require an actual DECODE (non-empty payload), not just a detected
+            # finder pattern — dense diagrams/grids trip the loose detector.
+            try:
+                ok, decoded, _, _ = det.detectAndDecodeMulti(img)
+                ok = bool(ok) and any((d or "").strip() for d in decoded)
+            except Exception:  # noqa: BLE001
+                ok = False
+            if ok:
+                m = re.search(r"pg[-_]?(\d+)", os.path.basename(img_path))
+                pages.append(int(m.group(1)) if m else len(pages) + 1)
+    return sorted(set(pages))
+
+
+def run_slide_checks(saved, args):
+    """Run the optional slide-deck quality checks on any downloaded PDF. Returns
+    True if all enabled checks passed (or none enabled), False if a check found a
+    problem — the deck should be regenerated."""
+    ok = True
+    for p in saved:
+        if str(p).lower().endswith(".pdf"):
+            if args.check_ru_slides:
+                bad = check_ukrainian_in_pdf(p)
+                if bad:
+                    ok = False
+                    log(f"  SLIDE CHECK FAILED [Ukrainian]: {p.name} contains "
+                        f"Ukrainian-only letters in: {', '.join(bad[:12])}")
+                else:
+                    log(f"  slide check [Ukrainian] OK: {p.name}")
+            if args.check_qr:
+                qr = check_qr_in_pdf(p)
+                if qr:
+                    ok = False
+                    log(f"  SLIDE CHECK FAILED [QR]: {p.name} has QR code(s) on "
+                        f"page(s) {qr} — regenerate (fake decorative QR)")
+                else:
+                    log(f"  slide check [QR] OK: {p.name}")
+    return ok
 
 
 def parse_args(argv=None):
@@ -844,6 +956,13 @@ def parse_args(argv=None):
     p.add_argument("--headless", action="store_true")
     p.add_argument("--keep-open", action="store_true")
     p.add_argument("--debug", action="store_true")
+    p.add_argument("--check-ru-slides", action="store_true",
+                   help="Scan the slide-deck PDF for Ukrainian-only letters "
+                        "(NotebookLM sometimes slips them into Russian decks); "
+                        "exit 9 if found")
+    p.add_argument("--check-qr", action="store_true",
+                   help="Detect QR codes in the slide-deck PDF (NotebookLM "
+                        "invents fake decorative ones); exit 9 if found")
     return p.parse_args(argv)
 
 

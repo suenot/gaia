@@ -201,6 +201,25 @@ Sources: `--source-text`, `--source-url` (×N), `--source-file` (×N),
 Debate), `--audio-length` (Short/Default/Long). Verified: an ~18-min Russian
 Audio Overview (`.m4a`) and a 5-page Slide Deck (`.pdf`).
 
+### Slide-deck quality checks (optional)
+
+NotebookLM occasionally (a) slips a **Ukrainian-only letter** (`і ї є ґ`) into a
+"Russian" slide, or (b) invents a **fake decorative QR code** (always bogus). Two
+opt-in checks run after the slides download and **exit `9`** if they trip, so you
+can regenerate:
+
+```bash
+python3 notebooklm_gen.py --source-file article.ru.md --slides \
+    --language Russian --check-ru-slides --check-qr
+```
+
+- `--check-ru-slides` — OCRs each page (`tesseract -l eng+rus+ukr`) and reports
+  words containing Ukrainian-only letters. Requires `pdftoppm` + `tesseract` with
+  the `rus` & `ukr` language packs. (OCR of stylized Latin text can add a few
+  false positives — the offending words are logged so you can judge.)
+- `--check-qr` — renders each page and flags any that contain a **decodable** QR
+  code (`cv2.QRCodeDetector`). Requires `pdftoppm` + `opencv-python-headless`.
+
 ## YouTube upload (no Data API)
 
 `youtube_upload.py` drives **YouTube Studio** (studio.youtube.com) through the same
