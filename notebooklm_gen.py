@@ -725,6 +725,18 @@ async def download_artifact(page, kind: str, debug: bool) -> Optional[Path]:
         if p:
             return p
     else:
+        # Downloading audio first opens/expands the audio player, whose card then
+        # gets mistaken for the slide card's More menu (slides download grabs the
+        # audio file). Close the player first so the layout resets.
+        for lbl in ("Close audio player", "Close"):
+            try:
+                c = page.locator(f"button[aria-label='{lbl}']")
+                if await c.count() > 0 and await c.first.is_visible():
+                    await c.first.click(timeout=2500)
+                    await page.wait_for_timeout(800)
+                    break
+            except Exception:  # noqa: BLE001
+                continue
         p = await _download_via_more_menu(page, "slides", stamp, debug)
         if p:
             return p
