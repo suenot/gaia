@@ -877,6 +877,24 @@ _UA_ONLY = "іїєґ"
 _UA_ONLY += _UA_ONLY.upper()
 
 
+# Cyrillic letters whose glyphs are near-identical to Latin ones (OCR of Latin
+# text frequently yields these when rus/ukr models are loaded).
+_LATIN_TWINS = set("аеорсухкіїєтгпнимвдзбАЕОРСУХКІЇЄТГПНИМВДЗБ")
+
+
+def _latin_misread(part):
+    """True if `part` is likely an OCR mis-read of a Latin word: nearly every
+    Cyrillic letter in it has a Latin glyph twin (Ргодисіїоп <- Production)."""
+    letters = [c for c in part if c.isalpha()]
+    if len(letters) < 4:
+        return False
+    cyr = [c for c in letters if "Ѐ" <= c <= "ӿ"]
+    if not cyr:
+        return False
+    twins = [c for c in cyr if c in _LATIN_TWINS]
+    return len(twins) >= 0.85 * len(cyr)
+
+
 def check_ukrainian_in_pdf(pdf_path):
     """Scan a slide-deck PDF for Ukrainian-only Cyrillic characters. NotebookLM
     slides carry no text layer (they are rendered images), so this OCRs each page
@@ -910,6 +928,14 @@ def check_ukrainian_in_pdf(pdf_path):
                 # The per-slide "NotebookLM" watermark OCRs as Cyrillic garbage
                 # like "Моїероок"/"ріероок" — not real Ukrainian text.
                 if "ероок" in word.lower() or "оок" in word.lower()[-4:]:
+                    continue
+                # Latin words on slides (Production, limit, market...) OCR as
+                # Cyrillic look-alikes with і/ї. If a hyphen-part containing the
+                # Ukrainian letter is almost fully mappable to Latin glyph
+                # twins, it is a mis-read Latin word, not Ukrainian text.
+                if any(_latin_misread(part) for part in word.split("-")
+                       if any(ch in _UA_ONLY for ch in part)):
+                    log(f"  (RU slide check: skipping likely Latin mis-read: {word})")
                     continue
                 if (len(word) >= 4 and len(cyr) >= 3
                         and len(cyr) >= 0.6 * len(word)
