@@ -162,6 +162,29 @@ async def dismiss_dialogs(page) -> None:
 # --------------------------------------------------------------------------- #
 # Login + notebook
 # --------------------------------------------------------------------------- #
+# NotebookLM was rebranded to "Gemini Notebook" (2026-07): a one-time modal
+# ("Let's go") blocks the page and button labels may say "notebook" with either
+# branding. Keep both generations of selectors.
+CREATE_BTN_SEL = ("button[aria-label='Create new notebook'], "
+                  "button[aria-label='New notebook'], "
+                  "button[aria-label='Create notebook'], "
+                  "button[aria-label='Create new'], "
+                  "button.create-new-button")
+
+
+async def _dismiss_rebrand_dialog(page):
+    for label in ("Let's go", "Got it", "Continue", "OK"):
+        try:
+            btn = page.locator(f"button:has-text(\"{label}\")")
+            if await btn.count() > 0 and await btn.first.is_visible():
+                await btn.first.click(timeout=3000)
+                log(f"  dismissed dialog via '{label}'")
+                await page.wait_for_timeout(1000)
+                return
+        except Exception:  # noqa: BLE001
+            continue
+
+
 async def open_home(page, debug: bool) -> bool:
     log(f"Navigating to {HOME}")
     await goto_retry(page, HOME)
@@ -170,16 +193,16 @@ async def open_home(page, debug: bool) -> bool:
     except Exception:  # noqa: BLE001
         pass
     try:
-        await page.wait_for_selector("button[aria-label='Create new notebook']",
-                                     state="visible", timeout=30_000)
+        await page.wait_for_selector(CREATE_BTN_SEL, state="visible", timeout=30_000)
     except Exception:  # noqa: BLE001
         pass
+    await _dismiss_rebrand_dialog(page)
     await page.wait_for_timeout(2000)
     await shot(page, "nlm_01_home", debug)
     if "accounts.google.com" in page.url or "signin" in page.url:
         log(f"ERROR: sign-in wall: {page.url}")
         return False
-    if await page.locator("button[aria-label='Create new notebook']").count() == 0:
+    if await page.locator(CREATE_BTN_SEL).count() == 0:
         log("WARNING: 'Create new notebook' not found — may not be logged in.")
         return False
     log("Logged in ✓ (NotebookLM home)")
@@ -188,8 +211,11 @@ async def open_home(page, debug: bool) -> bool:
 
 async def _click_create_notebook(page) -> bool:
     """Click a *visible* 'Create new notebook' button (there can be duplicates)."""
+    await _dismiss_rebrand_dialog(page)
     for sel in ("button[aria-label='Create new notebook']", "button:has-text('Create new')",
-                "button[aria-label='Create notebook']", "button:has-text('Create notebook')"):
+                "button[aria-label='Create notebook']", "button:has-text('Create notebook')",
+                "button[aria-label='New notebook']", "button:has-text('New notebook')",
+                "button.create-new-button"):
         loc = page.locator(sel)
         for i in range(await loc.count()):
             b = loc.nth(i)
@@ -410,6 +436,12 @@ async def generate_artifact(page, kind: str, language: str, instructions: str,
     """kind: 'audio' (Audio Overview) or 'slides' (Slide Deck)."""
     label = "Customize Audio Overview" if kind == "audio" else "Customize Slide Deck"
     btn = page.locator(f"button[aria-label='{label}']")
+    if await btn.count() == 0:
+        # Gemini Notebook (2026-07 rebrand): Studio artifacts are tiles with
+        # aria-label 'Audio Overview' / 'Slide Deck'; clicking the tile opens
+        # the customize popover directly.
+        tile = "Audio Overview" if kind == "audio" else "Slide Deck"
+        btn = page.locator(f"[role='button'][aria-label='{tile}'], button[aria-label='{tile}']")
     if await btn.count() == 0:
         log(f"ERROR: '{label}' button not found in Studio.");
         await dump_ui(page, f"no {label}")
@@ -875,6 +907,10 @@ def check_ukrainian_in_pdf(pdf_path):
                 cyr = [c for c in word if "Ѐ" <= c <= "ӿ"]
                 # A genuine Russian/Ukrainian word: mostly Cyrillic, has a
                 # lowercase letter (skip ALL-CAPS headers, which OCR mangles).
+                # The per-slide "NotebookLM" watermark OCRs as Cyrillic garbage
+                # like "Моїероок"/"ріероок" — not real Ukrainian text.
+                if "ероок" in word.lower() or "оок" in word.lower()[-4:]:
+                    continue
                 if (len(word) >= 4 and len(cyr) >= 3
                         and len(cyr) >= 0.6 * len(word)
                         and any(c.islower() for c in cyr)):
