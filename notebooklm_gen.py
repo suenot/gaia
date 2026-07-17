@@ -886,7 +886,7 @@ def _latin_misread(part):
     """True if `part` is likely an OCR mis-read of a Latin word: nearly every
     Cyrillic letter in it has a Latin glyph twin (Ргодисіїоп <- Production)."""
     letters = [c for c in part if c.isalpha()]
-    if len(letters) < 4:
+    if len(letters) < 3:
         return False
     cyr = [c for c in letters if "Ѐ" <= c <= "ӿ"]
     if not cyr:
