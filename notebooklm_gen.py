@@ -169,7 +169,12 @@ CREATE_BTN_SEL = ("button[aria-label='Create new notebook'], "
                   "button[aria-label='New notebook'], "
                   "button[aria-label='Create notebook'], "
                   "button[aria-label='Create new'], "
-                  "button.create-new-button")
+                  "button.create-new-button, "
+                  # 2026-07 Gemini Notebook home: create action is a card tile,
+                  # not a <button> — match anything clickable with the label text
+                  "[role='button']:has-text('Create new notebook'), "
+                  "mat-card:has-text('Create new notebook'), "
+                  "div.create-notebook-card")
 
 
 async def _dismiss_rebrand_dialog(page):
@@ -215,7 +220,10 @@ async def _click_create_notebook(page) -> bool:
     for sel in ("button[aria-label='Create new notebook']", "button:has-text('Create new')",
                 "button[aria-label='Create notebook']", "button:has-text('Create notebook')",
                 "button[aria-label='New notebook']", "button:has-text('New notebook')",
-                "button.create-new-button"):
+                "button.create-new-button",
+                # 2026-07 Gemini Notebook home: create action is a card tile
+                "[role='button']:has-text('Create new notebook')",
+                "mat-card:has-text('Create new notebook')"):
         loc = page.locator(sel)
         for i in range(await loc.count()):
             b = loc.nth(i)
