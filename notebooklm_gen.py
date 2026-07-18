@@ -47,6 +47,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import re
 import sys
 import time
 from pathlib import Path
@@ -344,19 +345,41 @@ async def add_source_discover(page, query: str, debug: bool, max_add: int = 10) 
     await page.wait_for_timeout(500)
     await box.first.press("Enter")
     await shot(page, "nlm_03_discover_sent", debug)
-    # Results render with checkboxes; wait for them, then Add/Import.
-    log("  waiting for discovered sources...")
-    deadline = time.time() + 120
+    # 2026-07 Gemini Notebook "Fast Research": results land in a panel with an
+    # explicit "Import" button that appears only once research completes. Wait
+    # for that button specifically (research can take 1-3 min), then click it.
+    log("  waiting for Fast Research to complete (Import button)...")
+    deadline = time.time() + 240
+    imported = False
     while time.time() < deadline:
-        if await page.locator("button:has-text('Add'), button:has-text('Import'), button:has-text('Insert')").count() > 0:
+        btn = page.get_by_role("button", name=re.compile(r"^Import$", re.I))
+        try:
+            for i in range(await btn.count()):
+                b = btn.nth(i)
+                if await b.is_visible():
+                    await b.click(timeout=6000)
+                    imported = True
+                    break
+        except Exception:  # noqa: BLE001
+            pass
+        if imported:
             break
-        await page.wait_for_timeout(2000)
+        await page.wait_for_timeout(3000)
     await dismiss_dialogs(page)
     await shot(page, "nlm_03_discover_results", debug)
-    # Add the discovered sources (button label varies: Add / Import / Insert).
-    if not await click_text(page, ["Import", "Add sources", "Add", "Insert"]):
-        log("  WARNING: could not find an Add button for discovered sources.")
-    return await _wait_source(page, debug, timeout_s=150)
+    if imported:
+        log("  discovered sources imported ✓")
+        await page.wait_for_timeout(10000)
+    else:
+        # Fallback: try the older label variants, then don't hard-fail —
+        # the primary source (URL/file) is enough to generate artifacts.
+        if not await click_text(page, ["Add sources", "Add", "Insert"]):
+            log("  WARNING: no Import button for discovered sources; "
+                "continuing with primary source only.")
+    # Any existing source row (incl. the primary URL/file) means we can proceed.
+    if await _wait_source(page, debug, timeout_s=60):
+        return True
+    return imported
 
 
 async def _wait_source(page, debug: bool, timeout_s: int = 120) -> bool:
