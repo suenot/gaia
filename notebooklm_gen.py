@@ -127,6 +127,20 @@ async def goto_retry(page, url: str, tries: int = 3) -> None:
         raise last
 
 
+async def robust_click(locator, timeout_ms: int = 4000) -> bool:
+    """Click a locator, falling back to a JS click when a cdk-overlay-backdrop
+    intercepts pointer events (recurring on the 2026 Gemini Notebook UI)."""
+    try:
+        await locator.click(timeout=timeout_ms)
+        return True
+    except Exception:  # noqa: BLE001
+        try:
+            await locator.evaluate("el => el.click()")
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
+
 async def click_text(page, words: List[str], timeout_ms: int = 4000) -> bool:
     """Click the first visible button/role=button/menuitem matching any word."""
     sel = "button, [role=button], [role=menuitem], [role=option], a"
@@ -142,8 +156,8 @@ async def click_text(page, words: List[str], timeout_ms: int = 4000) -> bool:
                 continue
             hay = ((await el.get_attribute("aria-label") or "") + " " + (await el.inner_text() or "")).lower()
             if any(w.lower() in hay for w in words):
-                await el.click(timeout=3000)
-                return True
+                if await robust_click(el, 3000):
+                    return True
         except Exception:  # noqa: BLE001
             continue
     return False
@@ -289,7 +303,7 @@ async def ensure_add_source_dialog(page) -> bool:
 async def add_source_text(page, text: str, debug: bool) -> bool:
     if not await ensure_add_source_dialog(page):
         log("ERROR: add-source dialog not available."); return False
-    await page.locator("button:has-text('Copied text')").first.click()
+    await robust_click(page.locator("button:has-text('Copied text')").first)
     ta = page.locator("textarea[aria-label='Pasted text'], textarea[placeholder*='Paste' i]")
     try:
         await ta.first.wait_for(state="visible", timeout=10_000)
@@ -306,7 +320,7 @@ async def add_source_text(page, text: str, debug: bool) -> bool:
 async def add_source_url(page, url: str, debug: bool) -> bool:
     if not await ensure_add_source_dialog(page):
         return False
-    await page.locator("button:has-text('Websites')").first.click()
+    await robust_click(page.locator("button:has-text('Websites')").first)
     await page.wait_for_timeout(1500)
     field = None
     for sel in ("input[type='url']", "textarea[aria-label*='URL' i]", "input[aria-label*='URL' i]",
