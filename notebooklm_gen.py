@@ -499,7 +499,7 @@ async def generate_artifact(page, kind: str, language: str, instructions: str,
         log(f"ERROR: '{label}' button not found in Studio.");
         await dump_ui(page, f"no {label}")
         return False
-    await btn.first.click()
+    await robust_click(btn.first)
     await page.wait_for_timeout(2000)
     await shot(page, f"nlm_05_{kind}_popover", debug)
 
@@ -531,7 +531,7 @@ async def generate_artifact(page, kind: str, language: str, instructions: str,
         log("ERROR: Generate button not found in popover.");
         await dump_ui(page, f"{kind} popover no-generate")
         return False
-    await gen.last.click()
+    await robust_click(gen.last)
     log(f"  {kind}: Generate clicked — generation started (a few minutes)...")
     await page.wait_for_timeout(3000)
     await dismiss_dialogs(page)
