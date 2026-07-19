@@ -233,7 +233,15 @@ async def _click_create_notebook(page) -> bool:
                     await b.click(timeout=4000)
                     return True
             except Exception:  # noqa: BLE001
-                continue
+                # A transient cdk-overlay-backdrop sometimes intercepts pointer
+                # events even though the button is visible. Fall back to a direct
+                # JS click that bypasses actionability/overlay checks.
+                try:
+                    if await b.is_visible():
+                        await b.evaluate("el => el.click()")
+                        return True
+                except Exception:  # noqa: BLE001
+                    continue
     return False
 
 
