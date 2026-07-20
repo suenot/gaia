@@ -768,7 +768,8 @@ async def _download_via_more_menu(page, kind: str, stamp: str, debug: bool) -> O
         return None
     try:
         async with page.expect_download(timeout=45_000) as dl_info:
-            await more.click(timeout=4000)
+            if not await robust_click(more):
+                raise RuntimeError("More(⋮) button not clickable")
             await page.wait_for_timeout(1000)
             if debug:
                 await dump_ui(page, f"{kind} more-menu")
@@ -843,8 +844,9 @@ async def run(args) -> int:
         artifacts.append("audio")
     if args.slides:
         artifacts.append("slides")
-    if not artifacts and not args.download_only:
-        artifacts = ["audio"]  # default
+    if not artifacts:
+        # --download-only with no explicit kind: grab whatever the notebook has.
+        artifacts = ["audio", "slides"] if args.download_only else ["audio"]
 
     async with make_camoufox(args.headless) as context:
         page = await prepare_persistent_page(context, cookies)
