@@ -17,6 +17,8 @@ Capabilities
     a steering prompt:
       --audio                        Audio Overview   (--instructions, --audio-format, --audio-length)
       --slides                       Slide Deck       (--slides-prompt)
+      --video                        Video Overview   (--video-format Cinematic|Explainer|Short,
+                                                       --video-prompt = storyboard / focus)
       --language "Russian"           output language for the artifacts
   * Download the generated artifacts to ./output/.
 
@@ -509,8 +511,10 @@ async def _select_audio_length(page, length: str) -> bool:
     return False
 
 
-async def _select_audio_format(page, fmt: str) -> bool:
-    """Pick the Audio Overview format (Deep Dive / Brief / Critique / Debate).
+async def _select_format_tile(page, fmt: str) -> bool:
+    """Pick a format tile by its label. Used for Audio Overview
+    (Deep Dive / Brief / Critique / Debate) and Video Overview
+    (Cinematic / Explainer / Short) — both render the same mat-radio tiles.
 
     Formats are mat-radio tiles whose visible text lives in a `span.tile-label`;
     clicking that label toggles the tile. Verify the tile's radio became checked
@@ -531,22 +535,24 @@ async def _select_audio_format(page, fmt: str) -> bool:
             "el => { let n=el; for(let i=0;i<6&&n;i++){ n=n.parentElement;"
             " if(n && /mat-mdc-radio-checked/.test(n.className||'')) return true; } return false; }")
         if checked:
-            log(f"  audio format set: {fmt}")
+            log(f"  format set: {fmt}")
             return True
-    log(f"  WARNING: could not confirm audio format '{fmt}'")
+    log(f"  WARNING: could not confirm format '{fmt}'")
     return False
 
 
 async def generate_artifact(page, kind: str, language: str, instructions: str,
                             fmt: str, length: str, debug: bool) -> bool:
     """kind: 'audio' (Audio Overview) or 'slides' (Slide Deck)."""
-    label = "Customize Audio Overview" if kind == "audio" else "Customize Slide Deck"
+    _labels = {"audio": ("Customize Audio Overview", "Audio Overview"),
+               "slides": ("Customize Slide Deck", "Slide Deck"),
+               "video": ("Customize Video Overview", "Video Overview")}
+    label, tile = _labels.get(kind, _labels["slides"])
     btn = page.locator(f"button[aria-label='{label}']")
     if await btn.count() == 0:
         # Gemini Notebook (2026-07 rebrand): Studio artifacts are tiles with
-        # aria-label 'Audio Overview' / 'Slide Deck'; clicking the tile opens
-        # the customize popover directly.
-        tile = "Audio Overview" if kind == "audio" else "Slide Deck"
+        # aria-label 'Audio Overview' / 'Slide Deck' / 'Video Overview'; clicking
+        # the tile opens the customize popover directly.
         btn = page.locator(f"[role='button'][aria-label='{tile}'], button[aria-label='{tile}']")
     if await btn.count() == 0:
         log(f"ERROR: '{label}' button not found in Studio.");
@@ -561,7 +567,7 @@ async def generate_artifact(page, kind: str, language: str, instructions: str,
 
     if kind == "audio":
         if fmt:
-            await _select_audio_format(page, fmt)   # Deep Dive / Brief / Critique / Debate
+            await _select_format_tile(page, fmt)   # Deep Dive / Brief / Critique / Debate
         if length:
             await _select_audio_length(page, length)  # Short / Default / Long
         if instructions:
@@ -569,6 +575,18 @@ async def generate_artifact(page, kind: str, language: str, instructions: str,
             if await ta.count() > 0:
                 await ta.first.fill(instructions)
                 log("  set audio focus instructions")
+    elif kind == "video":
+        # Video Overview: format tiles are Cinematic / Explainer / Short (a
+        # vertical bite-sized clip). The steering box is 'What should the video
+        # focus on?' — this is where the storyboard goes. There is no separate
+        # language selector; language follows the sources + steering text.
+        if fmt:
+            await _select_format_tile(page, fmt)   # Cinematic / Explainer / Short
+        if instructions:
+            ta = page.locator("textarea[aria-label*='focus on' i], textarea[placeholder*='Describe your own' i]")
+            if await ta.count() > 0:
+                await ta.first.fill(instructions)
+                log("  set video focus/storyboard")
     else:  # slides
         if instructions:
             ta = page.locator("textarea[aria-label*='Describe the slide deck' i]")
@@ -617,15 +635,16 @@ JS_MEDIA = r"""
 async def wait_artifact_ready(page, kind: str, timeout_s: int, debug: bool) -> bool:
     """Wait until the artifact card reports ready (a Play / Download / More control
     appears, or 'Generating...' text disappears)."""
-    label_word = "Audio Overview" if kind == "audio" else "Slide Deck"
+    label_word = {"audio": "Audio Overview", "video": "Video Overview"}.get(kind, "Slide Deck")
     deadline = time.time() + timeout_s
     last = 0.0
     start = time.time()
     while time.time() < deadline:
-        # A ready AUDIO card exposes a Play control (independent of other cards
-        # still generating). A ready SLIDE deck no longer shows its "Generating
-        # Slide Deck" placeholder and exposes an artifact More/open control.
-        if kind == "audio":
+        # A ready AUDIO or VIDEO card exposes a Play control (independent of other
+        # cards still generating). A ready SLIDE deck no longer shows its
+        # "Generating Slide Deck" placeholder and exposes an artifact More/open
+        # control.
+        if kind in ("audio", "video"):
             ready = await page.locator(PLAY_SEL).count() > 0
         else:
             try:
@@ -668,6 +687,9 @@ def _ext(kind: str, ctype: str, src: str) -> str:
     if kind == "audio":
         if "wav" in ct or ".wav" in s: return "wav"
         return "mp3"
+    if kind == "video":
+        if "webm" in ct or ".webm" in s: return "webm"
+        return "mp4"
     # slides
     if "pdf" in ct or ".pdf" in s: return "pdf"
     if "presentation" in ct or ".pptx" in s: return "pptx"
@@ -701,11 +723,14 @@ async def _artifact_more_button(page, kind: str):
     Audio: the More right after a Play control. Slides/other: a Studio-side More
     that is NOT on the same row as ANY Play button (every audio card has its own
     Play, so excluding all Play rows leaves the non-audio artifacts)."""
-    if kind == "audio":
+    if kind in ("audio", "video"):
         # The expanded audio player exposes its own overflow button whose
-        # aria-label is "See more options for audio player" (not "More").
+        # aria-label is "See more options for audio player" (not "More"). The
+        # video card, like audio, carries a Play control, so anchor the More
+        # button to the Play row the same way.
         for lbl in ("See more options for audio player",
-                    "More options for Audio Overview", "More"):
+                    "More options for Audio Overview",
+                    "More options for Video Overview", "More"):
             m = page.locator(f"button[aria-label='{lbl}']")
             try:
                 if await m.count() > 0 and await m.first.is_visible():
@@ -775,10 +800,11 @@ async def _grab_download(page, dl, kind: str):
     return None, ext
 
 
-async def _download_via_audio_src(page, stamp: str) -> Optional[Path]:
-    """Audio only: click Play to instantiate <audio>, then fetch its src directly
-    (context.request for http, in-page fetch for blob:). No browser download, so
-    the Camoufox 'could not be saved' temp dialog never appears."""
+async def _download_via_media_src(page, stamp: str, kind: str = "audio") -> Optional[Path]:
+    """Audio/video: click Play to instantiate the <audio>/<video> element, then
+    fetch its src directly (context.request for http, in-page fetch for blob:).
+    No browser download, so the Camoufox 'could not be saved' temp dialog never
+    appears. JS_MEDIA scans audio, source AND video elements."""
     try:
         play = page.locator(PLAY_SEL)
         if await play.count() > 0:
@@ -793,20 +819,20 @@ async def _download_via_audio_src(page, stamp: str) -> Optional[Path]:
     for src in srcs:
         try:
             if src.startswith("http"):
-                resp = await page.context.request.get(src, timeout=120_000)
+                resp = await page.context.request.get(src, timeout=180_000)
                 if resp.ok:
                     body = await resp.body()
                     if len(body) > MIN_BYTES:
-                        out = OUTPUT_DIR / f"notebooklm_audio_{stamp}.{_ext('audio', resp.headers.get('content-type',''), src)}"
+                        out = OUTPUT_DIR / f"notebooklm_{kind}_{stamp}.{_ext(kind, resp.headers.get('content-type',''), src)}"
                         out.write_bytes(body)
-                        log(f"  saved {out.name} via <audio> http src ({len(body):,} bytes)")
+                        log(f"  saved {out.name} via <{kind}> http src ({len(body):,} bytes)")
                         return out
             elif src.startswith("blob:"):
                 res = await page.evaluate(JS_FETCH_B64, src)
                 if res.get("size", 0) > MIN_BYTES:
-                    out = OUTPUT_DIR / f"notebooklm_audio_{stamp}.{_ext('audio', res.get('type',''), src)}"
+                    out = OUTPUT_DIR / f"notebooklm_{kind}_{stamp}.{_ext(kind, res.get('type',''), src)}"
                     out.write_bytes(base64.b64decode(res["b64"]))
-                    log(f"  saved {out.name} via <audio> blob ({res['size']:,} bytes)")
+                    log(f"  saved {out.name} via <{kind}> blob ({res['size']:,} bytes)")
                     return out
         except Exception:  # noqa: BLE001
             pass
@@ -826,10 +852,12 @@ async def _download_via_more_menu(page, kind: str, stamp: str, debug: bool) -> O
             await page.wait_for_timeout(1000)
             if debug:
                 await dump_ui(page, f"{kind} more-menu")
-            items = (["Download PDF", "Download PowerPoint", "Download"]
-                     if kind == "slides"
-                     else ["Download audio", "Download .m4a", "Download m4a",
-                           "Download"])
+            if kind == "slides":
+                items = ["Download PDF", "Download PowerPoint", "Download"]
+            elif kind == "video":
+                items = ["Download video", "Download .mp4", "Download mp4", "Download"]
+            else:
+                items = ["Download audio", "Download .m4a", "Download m4a", "Download"]
             if not await click_text(page, items):
                 raise RuntimeError("no Download item in More menu")
             await page.wait_for_timeout(600)
@@ -856,11 +884,11 @@ async def download_artifact(page, kind: str, debug: bool) -> Optional[Path]:
     OUTPUT_DIR.mkdir(exist_ok=True)
     stamp = time.strftime("%Y%m%d_%H%M%S")
 
-    if kind == "audio":
-        p = await _download_via_audio_src(page, stamp)
+    if kind in ("audio", "video"):
+        p = await _download_via_media_src(page, stamp, kind)
         if p:
             return p
-        p = await _download_via_more_menu(page, "audio", stamp, debug)
+        p = await _download_via_more_menu(page, kind, stamp, debug)
         if p:
             return p
     else:
@@ -897,9 +925,11 @@ async def run(args) -> int:
         artifacts.append("audio")
     if args.slides:
         artifacts.append("slides")
+    if getattr(args, "video", False):
+        artifacts.append("video")
     if not artifacts:
         # --download-only with no explicit kind: grab whatever the notebook has.
-        artifacts = ["audio", "slides"] if args.download_only else ["audio"]
+        artifacts = ["audio", "slides", "video"] if args.download_only else ["audio"]
 
     async with make_camoufox(args.headless) as context:
         page = await prepare_persistent_page(context, cookies)
@@ -951,9 +981,15 @@ async def run(args) -> int:
         # Generate artifacts (skip if download-only).
         if not args.download_only:
             for kind in artifacts:
-                instr = args.instructions if kind == "audio" else (args.slides_prompt or args.instructions)
+                if kind == "audio":
+                    instr, fmt = args.instructions, args.audio_format
+                elif kind == "video":
+                    instr = args.video_prompt or args.instructions
+                    fmt = args.video_format
+                else:  # slides
+                    instr, fmt = (args.slides_prompt or args.instructions), args.audio_format
                 if not await generate_artifact(page, kind, args.language, instr,
-                                               args.audio_format, args.audio_length, args.debug):
+                                               fmt, args.audio_length, args.debug):
                     log(f"  {kind}: generation could not be started.")
 
         # Wait + download each.
@@ -1129,8 +1165,14 @@ def parse_args(argv=None):
     p.add_argument("--language", default="", help="Output language for artifacts, e.g. 'Russian'")
     p.add_argument("--audio", action="store_true", help="Generate an Audio Overview")
     p.add_argument("--slides", action="store_true", help="Generate a Slide Deck")
+    p.add_argument("--video", action="store_true", help="Generate a Video Overview")
     p.add_argument("--instructions", default="", help="Focus/steering prompt for the Audio Overview")
     p.add_argument("--slides-prompt", default="", help="Description prompt for the Slide Deck")
+    p.add_argument("--video-prompt", default="",
+                   help="'What should the video focus on?' steering prompt for the "
+                        "Video Overview — put the storyboard here")
+    p.add_argument("--video-format", default="Short",
+                   help="Video Overview format: Cinematic | Explainer | Short (default Short)")
     p.add_argument("--audio-format", default="", help="Deep Dive | Brief | Critique | Debate")
     p.add_argument("--audio-length", default="", help="Short | Default | Long")
     p.add_argument("--download-only", action="store_true", help="Skip generation; just download ready artifacts")
