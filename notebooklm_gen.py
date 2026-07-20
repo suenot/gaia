@@ -484,6 +484,59 @@ async def _set_language(page, language: str, debug: bool = False) -> None:
         log(f"  language set failed: {str(e).splitlines()[0][:50]}")
 
 
+async def _select_audio_length(page, length: str) -> bool:
+    """Pick the Audio Overview length (Short / Default / Long) and CONFIRM it.
+
+    The length control is an Angular Material button-toggle group: each option is
+    a `button[role='radio']`, NOT a plain button — so the generic click_text
+    (which only scans button/[role=button]/menuitem/option/a) silently missed it
+    and left the default 'Default', producing 20-minute audio despite Short being
+    requested. Click the radio directly and verify aria-checked flipped."""
+    radio = page.locator("button[role='radio']").filter(has_text=length)
+    for attempt in range(3):
+        if await radio.count() == 0:
+            log(f"  length '{length}': radio not found")
+            return False
+        try:
+            await radio.first.click(timeout=4000)
+        except Exception:  # noqa: BLE001
+            await radio.first.evaluate("el => el.click()")
+        await page.wait_for_timeout(600)
+        if (await radio.first.get_attribute("aria-checked")) == "true":
+            log(f"  audio length set: {length}")
+            return True
+    log(f"  WARNING: could not confirm audio length '{length}' (may fall back to Default)")
+    return False
+
+
+async def _select_audio_format(page, fmt: str) -> bool:
+    """Pick the Audio Overview format (Deep Dive / Brief / Critique / Debate).
+
+    Formats are mat-radio tiles whose visible text lives in a `span.tile-label`;
+    clicking that label toggles the tile. Verify the tile's radio became checked
+    (its mat-mdc-radio-button ancestor gains 'mat-mdc-radio-checked')."""
+    label = page.locator("span.tile-label").filter(has_text=fmt)
+    if await label.count() == 0:
+        label = page.get_by_text(fmt, exact=True)
+    for attempt in range(3):
+        if await label.count() == 0:
+            log(f"  format '{fmt}': tile not found")
+            return False
+        try:
+            await label.first.click(timeout=4000)
+        except Exception:  # noqa: BLE001
+            await label.first.evaluate("el => el.click()")
+        await page.wait_for_timeout(600)
+        checked = await label.first.evaluate(
+            "el => { let n=el; for(let i=0;i<6&&n;i++){ n=n.parentElement;"
+            " if(n && /mat-mdc-radio-checked/.test(n.className||'')) return true; } return false; }")
+        if checked:
+            log(f"  audio format set: {fmt}")
+            return True
+    log(f"  WARNING: could not confirm audio format '{fmt}'")
+    return False
+
+
 async def generate_artifact(page, kind: str, language: str, instructions: str,
                             fmt: str, length: str, debug: bool) -> bool:
     """kind: 'audio' (Audio Overview) or 'slides' (Slide Deck)."""
@@ -508,9 +561,9 @@ async def generate_artifact(page, kind: str, language: str, instructions: str,
 
     if kind == "audio":
         if fmt:
-            await click_text(page, [fmt])          # Deep Dive / Brief / Critique / Debate
+            await _select_audio_format(page, fmt)   # Deep Dive / Brief / Critique / Debate
         if length:
-            await click_text(page, [length])       # Short / Default / Long
+            await _select_audio_length(page, length)  # Short / Default / Long
         if instructions:
             ta = page.locator("textarea[aria-label*='focus on in this episode' i]")
             if await ta.count() > 0:
