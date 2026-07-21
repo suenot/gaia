@@ -434,12 +434,29 @@ async def _wait_source(page, debug: bool, timeout_s: int = 120) -> bool:
 # Artifact generation (Customize popover)
 # --------------------------------------------------------------------------- #
 # Map a few language names to their likely native option labels in NotebookLM.
+# The dropdown lists languages by their ENDONYM (Deutsch, not German), so an
+# English name alone finds nothing. Non-Latin scripts sort after the Latin ones
+# and are far enough down the virtualized list that they aren't in the DOM until
+# the panel is scrolled — see _set_language.
 LANG_ALIASES = {
-    "russian": ["Russian", "Русский"],
+    "russian": ["Русский", "Russian"],
     "english": ["English"],
-    "spanish": ["Spanish", "Español"],
-    "german": ["German", "Deutsch"],
-    "french": ["French", "Français"],
+    "spanish": ["Español", "Spanish"],
+    "german": ["Deutsch", "German"],
+    "french": ["Français", "French"],
+    "chinese": ["中文（简体）", "简体中文", "中文", "Chinese (Simplified)", "Chinese"],
+    "chinese (simplified)": ["中文（简体）", "简体中文", "中文"],
+    "chinese (traditional)": ["中文（繁體）", "繁體中文", "中文"],
+    "japanese": ["日本語", "Japanese"],
+    "korean": ["한국어", "Korean"],
+    "arabic": ["العربية", "Arabic"],
+    "hindi": ["हिन्दी", "Hindi"],
+    "portuguese": ["português (Brasil)", "Português", "Portuguese"],
+    "italian": ["italiano", "Italian"],
+    "turkish": ["Türkçe", "Turkish"],
+    "vietnamese": ["Tiếng Việt", "Vietnamese"],
+    "thai": ["ไทย", "Thai"],
+    "indonesian": ["Indonesia", "Bahasa Indonesia", "Indonesian"],
 }
 
 
@@ -479,12 +496,30 @@ async def _set_language(page, language: str, debug: bool = False) -> None:
                 log(f"  language options: {opts}")
             except Exception:  # noqa: BLE001
                 pass
-        for name in names:
-            opt = page.locator(f"mat-option:has-text('{name}'), [role='option']:has-text('{name}')")
-            if await opt.count() > 0:
-                await opt.first.click(timeout=3000)
-                log(f"  language set to {name}")
-                return
+        # The panel is virtualized: only the visible slice exists in the DOM, and
+        # non-Latin scripts sort last, so 中文 / Русский / 日本語 are simply absent
+        # until scrolled to. Scroll the panel down in steps, retrying the match
+        # each time, until it appears or the list stops moving.
+        panel = page.locator("div.mat-mdc-select-panel, div[role='listbox']").first
+        seen_bottom = 0
+        for step in range(40):
+            for name in names:
+                opt = page.locator(
+                    f"mat-option:has-text('{name}'), [role='option']:has-text('{name}')")
+                if await opt.count() > 0:
+                    await opt.first.scroll_into_view_if_needed(timeout=3000)
+                    await opt.first.click(timeout=3000)
+                    log(f"  language set to {name}")
+                    return
+            try:
+                pos = await panel.evaluate(
+                    "el => { el.scrollTop += el.clientHeight * 0.8; return el.scrollTop; }")
+            except Exception:  # noqa: BLE001
+                break
+            if pos == seen_bottom:      # reached the end, nothing more to load
+                break
+            seen_bottom = pos
+            await page.wait_for_timeout(250)
         log(f"  language '{language}' not in list; leaving default")
         await page.keyboard.press("Escape")
     except Exception as e:  # noqa: BLE001
