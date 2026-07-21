@@ -891,6 +891,8 @@ OUTRO_STEP_S = 0.2        # sampling resolution
 OUTRO_BASELINE_FROM_S = 4.5  # frames older than this are assumed to be content
 OUTRO_MARGIN_DB = 2.5     # how far above the content baseline counts as outro/fade
 OUTRO_MAX_S = 5.0         # refuse to trim more than this (guards against false hits)
+OUTRO_TYPICAL_S = 2.1     # measured outro length, very consistent across videos
+OUTRO_STATIC_PSNR = 35.0  # frame 0.7s from the end this close to the final one = static card
 
 
 def _ffprobe_duration(path: Path) -> Optional[float]:
@@ -945,6 +947,10 @@ def trim_video_outro(path: Path) -> Path:
     of known-content frames rather than being a fixed number.
 
     Returns the path (trimmed in place); on any failure the original is kept.
+
+    NOT idempotent: run it once, on a freshly downloaded file. A video whose
+    final slide is itself static can look like it still has an outro, so a
+    second pass may cut real footage. The pipeline calls this exactly once.
     """
     if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
         log("  outro trim skipped: ffmpeg/ffprobe not found")
@@ -959,6 +965,15 @@ def trim_video_outro(path: Path) -> Path:
         ref = tmp / "ref.png"
         if not _extract_frame(path, dur - 0.15, ref):
             return path
+        # Bail out unless the tail actually IS the static branded card. Without
+        # this the detector happily invents a boundary inside ordinary content —
+        # re-running on an already-trimmed video would chop off real footage.
+        near = tmp / "near.png"
+        if _extract_frame(path, dur - 0.7, near):
+            tail = _frame_psnr(near, ref)
+            if tail is not None and tail < OUTRO_STATIC_PSNR:
+                log(f"  no static outro card at the end ({tail:.1f} dB); keeping full video")
+                return path
         t = dur - 0.4
         while t > dur - OUTRO_SCAN_S and t > 0:
             cur = tmp / "cur.png"
@@ -997,8 +1012,26 @@ def trim_video_outro(path: Path) -> Path:
         log("  outro candidate too close to the end; keeping full video")
         return path
     if dur - cut_at > OUTRO_MAX_S:
-        log(f"  outro candidate at {dur - cut_at:.1f}s from end looks too long; keeping full video")
-        return path
+        # No clean step was found — happens when the closing slide is itself pale
+        # and near-empty, so content scores almost as high as the outro and the
+        # PSNR curve slopes instead of stepping. The outro length is very stable
+        # (2.07-2.09s measured across generated videos), so fall back to it, but
+        # only after confirming the tail really is the static branded card:
+        # a frame 0.7s from the end must be nearly identical to the final frame.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            ref, near = tmp / "r.png", tmp / "n.png"
+            ok = (_extract_frame(path, dur - 0.15, ref)
+                  and _extract_frame(path, dur - 0.7, near))
+            tail_psnr = _frame_psnr(near, ref) if ok else None
+        if tail_psnr is not None and tail_psnr >= OUTRO_STATIC_PSNR:
+            cut_at = dur - OUTRO_TYPICAL_S
+            log(f"  no clean boundary (candidate {dur - cut_at:.1f}s out); tail is static "
+                f"({tail_psnr:.1f} dB) so trimming the typical {OUTRO_TYPICAL_S}s")
+        else:
+            log(f"  outro candidate at {dur - cut_at:.1f}s from end looks too long "
+                f"and the tail isn't static; keeping full video")
+            return path
 
     out = path.with_name(path.stem + "_trimmed" + path.suffix)
     try:
