@@ -19,6 +19,8 @@ Capabilities
       --slides                       Slide Deck       (--slides-prompt)
       --video                        Video Overview   (--video-format Cinematic|Explainer|Short,
                                                        --video-prompt = storyboard / focus)
+                                     The trailing "Google NotebookLM" outro (~2s) is
+                                     detected and cut off; --keep-outro disables that.
       --language "Russian"           output language for the artifacts
   * Download the generated artifacts to ./output/.
 
@@ -50,7 +52,10 @@ import argparse
 import asyncio
 import base64
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import List, Optional
@@ -878,6 +883,128 @@ async def _download_via_more_menu(page, kind: str, stamp: str, debug: bool) -> O
     return None
 
 
+# --------------------------------------------------------------------------- #
+# Video post-processing: strip the trailing "Google NotebookLM" outro
+# --------------------------------------------------------------------------- #
+OUTRO_SCAN_S = 6.0        # how far back from the end to look for the boundary
+OUTRO_STEP_S = 0.2        # sampling resolution
+OUTRO_CONTENT_PSNR = 18.0  # below this vs the final frame, a frame is real content
+OUTRO_MAX_S = 5.0         # refuse to trim more than this (guards against false hits)
+
+
+def _ffprobe_duration(path: Path) -> Optional[float]:
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "csv=p=0", str(path)],
+            capture_output=True, text=True, timeout=60)
+        return float(out.stdout.strip())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _extract_frame(video: Path, t: float, dest: Path) -> bool:
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-v", "error", "-ss", f"{t:.2f}", "-i", str(video),
+             "-frames:v", "1", str(dest), "-y"],
+            capture_output=True, timeout=60)
+        return r.returncode == 0 and dest.is_file()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _frame_psnr(a: Path, b: Path) -> Optional[float]:
+    """PSNR between two stills; higher = more similar (inf -> 100)."""
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-v", "info", "-i", str(a), "-i", str(b),
+             "-lavfi", "psnr", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=60)
+        m = re.search(r"average:([\d.]+|inf)", r.stderr)
+        if not m:
+            return None
+        return 100.0 if m.group(1) == "inf" else float(m.group(1))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def trim_video_outro(path: Path) -> Path:
+    """Cut the trailing 'Google NotebookLM' branded outro off a Video Overview.
+
+    Every generated video ends with a fade into a static Google NotebookLM
+    card (~2.2s). In a Short that is dead air at the very moment retention
+    matters, so cut it off.
+
+    Detection, rather than a hardcoded 2.2s, so it survives NotebookLM changing
+    the outro: take the final frame as a reference (it is always pure outro) and
+    walk backwards comparing each sampled frame to it. Content frames score
+    wildly differently from the outro, the fade scores in between, so the
+    content->outro boundary shows up as the single largest PSNR drop. Measured
+    across generated videos: content ~5-16 dB, fade ~19-27 dB, outro >45 dB.
+
+    Returns the path (trimmed in place); on any failure the original is kept.
+    """
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        log("  outro trim skipped: ffmpeg/ffprobe not found")
+        return path
+    dur = _ffprobe_duration(path)
+    if not dur or dur < 8:
+        return path
+
+    samples = []  # (t, psnr), newest first
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        ref = tmp / "ref.png"
+        if not _extract_frame(path, dur - 0.15, ref):
+            return path
+        t = dur - 0.4
+        while t > dur - OUTRO_SCAN_S and t > 0:
+            cur = tmp / "cur.png"
+            if _extract_frame(path, t, cur):
+                p = _frame_psnr(cur, ref)
+                if p is not None:
+                    samples.append((t, p))
+            t -= OUTRO_STEP_S
+
+    # Walking backwards, the first frame that scores like content marks the end
+    # of the real video; the outro (and its fade) sit between it and the end.
+    # Don't use "largest PSNR drop" — the biggest jump is inside the outro
+    # itself (identical final frames score inf, earlier outro frames ~45 dB).
+    cut_at, last_psnr = None, None
+    for i, (t, p) in enumerate(samples):
+        if p < OUTRO_CONTENT_PSNR:
+            prev_t = samples[i - 1][0] if i else dur
+            cut_at, last_psnr = (t + prev_t) / 2, p
+            break
+    if cut_at is None:
+        log("  outro boundary not found (no content-like frame in scan window); "
+            "keeping full video")
+        return path
+    if dur - cut_at > OUTRO_MAX_S:
+        log(f"  outro candidate at {dur - cut_at:.1f}s from end looks too long; keeping full video")
+        return path
+
+    out = path.with_name(path.stem + "_trimmed" + path.suffix)
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-v", "error", "-i", str(path), "-t", f"{cut_at:.2f}",
+             "-c", "copy", "-movflags", "+faststart", str(out), "-y"],
+            capture_output=True, timeout=300)
+        if r.returncode != 0 or not out.is_file() or out.stat().st_size < MIN_BYTES:
+            log("  outro trim failed; keeping full video")
+            out.unlink(missing_ok=True)
+            return path
+        out.replace(path)
+        log(f"  trimmed NotebookLM outro: {dur:.1f}s -> {cut_at:.1f}s "
+            f"(-{dur - cut_at:.1f}s, last content frame {last_psnr:.1f} dB)")
+        return path
+    except Exception as e:  # noqa: BLE001
+        log(f"  outro trim error: {str(e).splitlines()[0][:60]}")
+        out.unlink(missing_ok=True)
+        return path
+
+
 async def download_artifact(page, kind: str, debug: bool) -> Optional[Path]:
     """Download the artifact. Audio: prefer the <audio> src (download-free, avoids
     the Camoufox temp-save dialog); slides: the card More -> 'Download PDF'."""
@@ -998,6 +1125,8 @@ async def run(args) -> int:
             if await wait_artifact_ready(page, kind, args.timeout, args.debug):
                 p = await download_artifact(page, kind, args.debug)
                 if p:
+                    if kind == "video" and not args.keep_outro:
+                        p = trim_video_outro(p)
                     saved.append(p)
 
         if saved:
@@ -1173,6 +1302,9 @@ def parse_args(argv=None):
                         "Video Overview — put the storyboard here")
     p.add_argument("--video-format", default="Short",
                    help="Video Overview format: Cinematic | Explainer | Short (default Short)")
+    p.add_argument("--keep-outro", action="store_true",
+                   help="Keep the trailing 'Google NotebookLM' outro on Video "
+                        "Overviews (it is detected and cut off by default)")
     p.add_argument("--audio-format", default="", help="Deep Dive | Brief | Critique | Debate")
     p.add_argument("--audio-length", default="", help="Short | Default | Long")
     p.add_argument("--download-only", action="store_true", help="Skip generation; just download ready artifacts")
