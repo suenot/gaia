@@ -1028,12 +1028,29 @@ async def download_artifact(page, kind: str, debug: bool) -> Optional[Path]:
     stamp = time.strftime("%Y%m%d_%H%M%S")
 
     if kind in ("audio", "video"):
-        p = await _download_via_media_src(page, stamp, kind)
-        if p:
-            return p
-        p = await _download_via_more_menu(page, kind, stamp, debug)
-        if p:
-            return p
+        # A freshly-finished Video Overview reports ready before its card is
+        # actually usable: the <video> element has no src yet and the More menu
+        # has no Download item, so both paths fail. Re-running the script with
+        # --download-only always worked, which means it just needs time and a
+        # reload — so do that inline instead of losing the generation.
+        attempts = 3 if kind == "video" else 1
+        for attempt in range(attempts):
+            p = await _download_via_media_src(page, stamp, kind)
+            if p:
+                return p
+            p = await _download_via_more_menu(page, kind, stamp, debug)
+            if p:
+                return p
+            if attempt < attempts - 1:
+                log(f"  {kind} not downloadable yet; waiting and reloading "
+                    f"(attempt {attempt + 1}/{attempts})")
+                await page.wait_for_timeout(20_000)
+                try:
+                    await page.reload(wait_until="domcontentloaded", timeout=60_000)
+                    await page.wait_for_timeout(8000)
+                    await dismiss_dialogs(page)
+                except Exception:  # noqa: BLE001
+                    pass
     else:
         # Downloading audio first opens/expands the audio player, whose card then
         # gets mistaken for the slide card's More menu (slides download grabs the
