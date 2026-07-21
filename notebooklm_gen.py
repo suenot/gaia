@@ -886,9 +886,10 @@ async def _download_via_more_menu(page, kind: str, stamp: str, debug: bool) -> O
 # --------------------------------------------------------------------------- #
 # Video post-processing: strip the trailing "Google NotebookLM" outro
 # --------------------------------------------------------------------------- #
-OUTRO_SCAN_S = 6.0        # how far back from the end to look for the boundary
+OUTRO_SCAN_S = 9.0        # how far back from the end to sample
 OUTRO_STEP_S = 0.2        # sampling resolution
-OUTRO_CONTENT_PSNR = 18.0  # below this vs the final frame, a frame is real content
+OUTRO_BASELINE_FROM_S = 4.5  # frames older than this are assumed to be content
+OUTRO_MARGIN_DB = 2.5     # how far above the content baseline counts as outro/fade
 OUTRO_MAX_S = 5.0         # refuse to trim more than this (guards against false hits)
 
 
@@ -936,12 +937,12 @@ def trim_video_outro(path: Path) -> Path:
     card (~2.2s). In a Short that is dead air at the very moment retention
     matters, so cut it off.
 
-    Detection, rather than a hardcoded 2.2s, so it survives NotebookLM changing
+    Detection, rather than a hardcoded 2.1s, so it survives NotebookLM changing
     the outro: take the final frame as a reference (it is always pure outro) and
-    walk backwards comparing each sampled frame to it. Content frames score
-    wildly differently from the outro, the fade scores in between, so the
-    content->outro boundary shows up as the single largest PSNR drop. Measured
-    across generated videos: content ~5-16 dB, fade ~19-27 dB, outro >45 dB.
+    walk backwards comparing each sampled frame to it by PSNR. How similar the
+    content is to the outro varies per video (a dark deck scores ~5 dB, a light
+    paper-styled one ~21 dB), so the cutoff is derived per video from a baseline
+    of known-content frames rather than being a fixed number.
 
     Returns the path (trimmed in place); on any failure the original is kept.
     """
@@ -967,19 +968,33 @@ def trim_video_outro(path: Path) -> Path:
                     samples.append((t, p))
             t -= OUTRO_STEP_S
 
-    # Walking backwards, the first frame that scores like content marks the end
-    # of the real video; the outro (and its fade) sit between it and the end.
-    # Don't use "largest PSNR drop" — the biggest jump is inside the outro
-    # itself (identical final frames score inf, earlier outro frames ~45 dB).
+    # How similar content is to the outro varies hugely per video (a dark deck
+    # scores ~5 dB, a light paper-styled one ~21 dB), so an absolute cutoff
+    # misfires. Take frames older than OUTRO_BASELINE_FROM_S as known content,
+    # use their median as the baseline, and treat anything meaningfully above it
+    # as outro or fade. Walking backwards, the first frame back at baseline is
+    # the last real content frame.
+    # Don't use "largest PSNR drop" either — the biggest jump sits inside the
+    # outro itself (identical final frames score inf vs ~45 dB just before).
+    base_vals = sorted(p for t, p in samples if t <= dur - OUTRO_BASELINE_FROM_S)
+    if len(base_vals) < 3:
+        log("  outro trim skipped: not enough frames to establish a baseline")
+        return path
+    baseline = base_vals[len(base_vals) // 2]
+    threshold = baseline + OUTRO_MARGIN_DB
+
     cut_at, last_psnr = None, None
     for i, (t, p) in enumerate(samples):
-        if p < OUTRO_CONTENT_PSNR:
+        if p <= threshold:
             prev_t = samples[i - 1][0] if i else dur
             cut_at, last_psnr = (t + prev_t) / 2, p
             break
     if cut_at is None:
         log("  outro boundary not found (no content-like frame in scan window); "
             "keeping full video")
+        return path
+    if dur - cut_at < 0.4:
+        log("  outro candidate too close to the end; keeping full video")
         return path
     if dur - cut_at > OUTRO_MAX_S:
         log(f"  outro candidate at {dur - cut_at:.1f}s from end looks too long; keeping full video")
@@ -997,7 +1012,8 @@ def trim_video_outro(path: Path) -> Path:
             return path
         out.replace(path)
         log(f"  trimmed NotebookLM outro: {dur:.1f}s -> {cut_at:.1f}s "
-            f"(-{dur - cut_at:.1f}s, last content frame {last_psnr:.1f} dB)")
+            f"(-{dur - cut_at:.1f}s; content baseline {baseline:.1f} dB, "
+            f"last content frame {last_psnr:.1f} dB)")
         return path
     except Exception as e:  # noqa: BLE001
         log(f"  outro trim error: {str(e).splitlines()[0][:60]}")
