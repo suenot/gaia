@@ -1,0 +1,22 @@
+Topic: Higgsfield AI and the Seedance unlimited-generation offer
+
+User-supplied post to research and turn into an English YouTube Short:
+
+By the way, higgsfield.ai is Kazakhstan's first unicorn. It was founded by Alex Mashrabov and Yerzat Dulat.
+
+I happened to watch Alex's talk just yesterday:
+https://www.youtube.com/watch?v=NqhjEtITUOs
+
+The post says Higgsfield is offering huge discounts and two weeks of unlimited generations: one week with Seedance 2.0, followed by another week with any other model. Seedance 2.5 might be available by then too, and Seedance video generation is usually expensive.
+
+Examples of what can already be made on Higgsfield:
+https://www.youtube.com/watch?v=qqcH-1Rk-ow
+
+The post asks whether we should make our own series and invites ideas. It was intended as a quick opportunity note rather than an algorithmic-trading post.
+
+Editorial requirements:
+- Research the current offer and distinguish current official terms from the user-supplied post.
+- Do not present the two-week duration, discounts, or Seedance 2.5 availability as guaranteed; tell viewers to check the current Higgsfield terms before paying.
+- Explain the value proposition: expensive video generation becomes easier to test during a limited unlimited window.
+- End with a concrete CTA: suggest a series idea in the comments or message Telegram https://t.me/suenot_dev.
+- Keep the tone energetic, useful, and transparent; no investment or financial promises.
