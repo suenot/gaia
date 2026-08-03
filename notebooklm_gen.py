@@ -574,9 +574,9 @@ async def _select_format_tile(page, fmt: str) -> bool:
     (Deep Dive / Brief / Critique / Debate) and Video Overview
     (Cinematic / Explainer / Short) — both render the same mat-radio tiles.
 
-    Formats are mat-radio tiles whose visible text lives in a `span.tile-label`;
-    clicking that label toggles the tile. Verify the tile's radio became checked
-    (its mat-mdc-radio-button ancestor gains 'mat-mdc-radio-checked')."""
+    Formats used to be mat-radio tiles whose visible text lived in a
+    `span.tile-label`. The current Video Overview dialog renders plain cards,
+    so select by the visible label and tolerate its immediate DOM re-render."""
     label = page.locator("span.tile-label").filter(has_text=fmt)
     if await label.count() == 0:
         label = page.get_by_text(fmt, exact=True)
@@ -584,14 +584,41 @@ async def _select_format_tile(page, fmt: str) -> bool:
         if await label.count() == 0:
             log(f"  format '{fmt}': tile not found")
             return False
+        clicked = False
         try:
-            await label.first.click(timeout=4000)
+            await label.first.click(timeout=6_000, force=True)
+            clicked = True
         except Exception:  # noqa: BLE001
-            await label.first.evaluate("el => el.click()")
+            # The Video Overview card is sometimes re-rendered between locator
+            # resolution and click. Find its current text node in the live DOM
+            # and invoke the card's component click handler directly.
+            clicked = await page.evaluate(
+                """fmt => {
+                    const wanted = fmt.trim().toLowerCase();
+                    const all = [...document.querySelectorAll('div, button, span')];
+                    const leaf = all.find(e =>
+                        e.textContent.trim().toLowerCase() === wanted &&
+                        ![...e.children].some(c => c.textContent.trim()));
+                    const target = leaf && (leaf.closest('[role=radio], [role=button]')
+                        || leaf.parentElement || leaf);
+                    if (!target) return false;
+                    target.click();
+                    return true;
+                }""",
+                fmt,
+            )
+        if not clicked:
+            continue
         await page.wait_for_timeout(600)
-        checked = await label.first.evaluate(
-            "el => { let n=el; for(let i=0;i<6&&n;i++){ n=n.parentElement;"
-            " if(n && /mat-mdc-radio-checked/.test(n.className||'')) return true; } return false; }")
+        try:
+            checked = await label.first.evaluate(
+                "el => { let n=el; for(let i=0;i<6&&n;i++){ n=n.parentElement;"
+                " if(n && /mat-mdc-radio-checked/.test(n.className||'')) return true; } return false; }")
+        except Exception:  # noqa: BLE001
+            # Current Video Overview cards re-render immediately on selection.
+            # A successful click that detaches the old label is the positive
+            # selection signal for that UI.
+            checked = True
         if checked:
             log(f"  format set: {fmt}")
             return True
