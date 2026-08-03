@@ -351,10 +351,28 @@ async def add_source_url(page, url: str, debug: bool) -> bool:
 async def add_source_file(page, path: Path, debug: bool) -> bool:
     if not await ensure_add_source_dialog(page):
         return False
+    # Newer NotebookLM keeps the native input in the dialog DOM.  Setting it
+    # directly avoids the animated Material button entirely and is equivalent
+    # to selecting a file in the native chooser.
+    file_input = page.locator("input[type='file']")
+    try:
+        if await file_input.count() > 0:
+            await file_input.first.set_input_files(str(path))
+            log(f"  uploaded file through input: {path.name}")
+            return await _wait_source(page, debug, timeout_s=180)
+    except Exception as e:  # noqa: BLE001
+        log(f"  direct file-input upload failed: {str(e).splitlines()[0][:80]}")
     up = page.locator("button:has-text('Upload files')")
     try:
         async with page.expect_file_chooser(timeout=10_000) as fc:
-            await up.first.click()
+            try:
+                # NotebookLM's upload button can keep its ripple animation alive
+                # indefinitely, which makes Playwright's regular click wait for
+                # actionability even though the native chooser is available.
+                await up.first.click(timeout=6_000)
+            except Exception as e:  # noqa: BLE001
+                log(f"  upload click stalled ({str(e).splitlines()[0][:50]}); JS click")
+                await up.first.evaluate("el => el.click()")
         chooser = await fc.value
         await chooser.set_files(str(path))
         log(f"  uploaded file: {path.name}")
@@ -688,15 +706,20 @@ async def wait_artifact_ready(page, kind: str, timeout_s: int, debug: bool,
         if kind in ("audio", "video"):
             cards = page.locator("artifact-library-item")
             card_count = await cards.count()
+            # Studio tiles are also implemented as artifact-library-item in the
+            # current NotebookLM UI. A genuine playable artifact is the one that
+            # exposes a Play control; counting a tile alone falsely marks a new
+            # request as ready after a few seconds.
+            has_playable_media = bool(await _play_button_rows(page))
             try:
                 body = (await page.evaluate("() => document.body.innerText || ''")).lower()
             except Exception:  # noqa: BLE001
                 body = ""
             generating = f"generating {'short ' if kind == 'video' else ''}{label_word}".lower()
             if baseline_artifact_count is not None:
-                ready = card_count > baseline_artifact_count and generating not in body
+                ready = card_count > baseline_artifact_count and generating not in body and has_playable_media
             else:
-                ready = generating not in body and await _artifact_card(page, kind) is not None
+                ready = generating not in body and has_playable_media and await _artifact_card(page, kind) is not None
         else:
             try:
                 body = (await page.evaluate("() => document.body.innerText || ''")).lower()
