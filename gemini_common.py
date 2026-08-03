@@ -108,7 +108,10 @@ def make_camoufox(headless: bool = False):
     CAMOUFOX_PROFILE_DIR.mkdir(exist_ok=True)
     opts = dict(
         headless=headless,
-        humanize=True,
+        # Camoufox 0.5.x treats bool as an int and serializes humanize=True as
+        # `humanize:maxTime=true`; the browser expects a numeric value and then
+        # stops servicing trusted input. Pass an explicit float instead.
+        humanize=1.0,
         # geoip needs a public-IP lookup; skip it gracefully if that's
         # unreachable (offline / flaky network) so launch doesn't crash with
         # InvalidIP. Camoufox then uses default geo/timezone.
