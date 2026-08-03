@@ -672,7 +672,8 @@ JS_MEDIA = r"""
 """
 
 
-async def wait_artifact_ready(page, kind: str, timeout_s: int, debug: bool) -> bool:
+async def wait_artifact_ready(page, kind: str, timeout_s: int, debug: bool,
+                              baseline_artifact_count: Optional[int] = None) -> bool:
     """Wait until the artifact card reports ready (a Play / Download / More control
     appears, or 'Generating...' text disappears)."""
     label_word = {"audio": "Audio Overview", "video": "Video Overview"}.get(kind, "Slide Deck")
@@ -685,7 +686,17 @@ async def wait_artifact_ready(page, kind: str, timeout_s: int, debug: bool) -> b
         # "Generating Slide Deck" placeholder and exposes an artifact More/open
         # control.
         if kind in ("audio", "video"):
-            ready = await page.locator(PLAY_SEL).count() > 0
+            cards = page.locator("artifact-library-item")
+            card_count = await cards.count()
+            try:
+                body = (await page.evaluate("() => document.body.innerText || ''")).lower()
+            except Exception:  # noqa: BLE001
+                body = ""
+            generating = f"generating {'short ' if kind == 'video' else ''}{label_word}".lower()
+            if baseline_artifact_count is not None:
+                ready = card_count > baseline_artifact_count and generating not in body
+            else:
+                ready = generating not in body and await _artifact_card(page, kind) is not None
         else:
             try:
                 body = (await page.evaluate("() => document.body.innerText || ''")).lower()
@@ -757,12 +768,48 @@ async def _play_button_rows(page) -> list:
 PLAY_SEL = "button[aria-label='Play'], button[aria-label='Play audio']"
 
 
+async def _artifact_card(page, kind: str):
+    """Return the newest Studio artifact card for *kind*.
+
+    NotebookLM does not expose a stable aria-label on generated cards. Its card
+    text does expose stable material-icon tokens: ``audio_magic_eraser`` for
+    audio and ``tablet`` for slide decks. Video cards are the remaining playable
+    media cards. Generated artifacts are newest-first.
+    """
+    cards = page.locator("artifact-library-item")
+    for i in range(await cards.count()):
+        card = cards.nth(i)
+        try:
+            if not await card.is_visible():
+                continue
+            text = (await card.inner_text()).lower()
+            is_audio = "audio_magic_eraser" in text
+            is_slides = "tablet" in text
+            if ((kind == "audio" and is_audio) or
+                    (kind == "slides" and is_slides) or
+                    (kind == "video" and not is_audio and not is_slides)):
+                return card
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
 async def _artifact_more_button(page, kind: str):
     """Return the More(⋮) button of the wanted *artifact card* in the Studio panel.
 
     Audio: the More right after a Play control. Slides/other: a Studio-side More
     that is NOT on the same row as ANY Play button (every audio card has its own
     Play, so excluding all Play rows leaves the non-audio artifacts)."""
+    card = await _artifact_card(page, kind)
+    if card is not None:
+        more = card.locator("button[aria-label='More'], button[aria-label*='more options' i]")
+        for i in range(await more.count()):
+            try:
+                if await more.nth(i).is_visible():
+                    return more.nth(i)
+            except Exception:  # noqa: BLE001
+                continue
+
     if kind in ("audio", "video"):
         # The expanded audio player exposes its own overflow button whose
         # aria-label is "See more options for audio player" (not "More"). The
@@ -770,21 +817,39 @@ async def _artifact_more_button(page, kind: str):
         # button to the Play row the same way.
         for lbl in ("See more options for audio player",
                     "More options for Audio Overview",
-                    "More options for Video Overview", "More"):
+                    "More options for Video Overview"):
             m = page.locator(f"button[aria-label='{lbl}']")
             try:
-                if await m.count() > 0 and await m.first.is_visible():
-                    return m.first
+                visible = []
+                for i in range(await m.count()):
+                    if await m.nth(i).is_visible():
+                        box = await m.nth(i).bounding_box()
+                        if box:
+                            visible.append((box["y"], m.nth(i)))
+                if visible:
+                    return max(visible, key=lambda item: item[0])[1]
             except Exception:  # noqa: BLE001
                 continue
-        play = page.locator(PLAY_SEL)
-        if await play.count() > 0:
-            more = play.first.locator(
-                "xpath=following::button[@aria-label='More' or "
-                "@aria-label='See more options for audio player'][1]")
-            if await more.count() > 0:
-                return more.first
-        return None
+        # Generic aria-label='More' also exists on source cards. Match it to a
+        # Play control on the same Studio artifact row, then take the newest
+        # (bottom-most) artifact rather than the first old ready card.
+        play_ys = await _play_button_rows(page)
+        mores = page.locator("button[aria-label='More']")
+        cands = []
+        for i in range(await mores.count()):
+            button = mores.nth(i)
+            try:
+                if not await button.is_visible():
+                    continue
+                box = await button.bounding_box()
+                if not box or box["x"] < 900:
+                    continue
+                y = box["y"] + box["height"] / 2
+                if any(abs(y - play_y) < 28 for play_y in play_ys):
+                    cands.append((y, button))
+            except Exception:  # noqa: BLE001
+                continue
+        return max(cands, key=lambda item: item[0])[1] if cands else None
 
     play_ys = await _play_button_rows(page)
     mores = page.locator("button[aria-label='More']")
@@ -816,6 +881,14 @@ async def _grab_download(page, dl, kind: str):
     write); fall back to save_as with a size check. Returns (bytes, ext) or (None, ext)."""
     suggested = dl.suggested_filename or ""
     ext = suggested.rsplit(".", 1)[-1] if "." in suggested else _ext(kind, "", suggested)
+    allowed = {
+        "audio": {"m4a", "mp3", "wav", "aac", "ogg"},
+        "video": {"mp4", "webm", "mov"},
+        "slides": {"pdf", "pptx"},
+    }
+    if ext.lower() not in allowed.get(kind, {ext.lower()}):
+        log(f"  rejected {suggested or 'download'}: .{ext} is not {kind}")
+        return None, ext
     url = dl.url or ""
     if url.startswith("http"):
         try:
@@ -1103,12 +1176,16 @@ async def download_artifact(page, kind: str, debug: bool) -> Optional[Path]:
         # reload — so do that inline instead of losing the generation.
         attempts = 3 if kind == "video" else 1
         for attempt in range(attempts):
-            p = await _download_via_media_src(page, stamp, kind)
-            if p:
-                return p
+            # Video cards do not share the audio player's reliable media-src
+            # semantics. Use the kind-scoped card menu first so a neighboring
+            # Audio Overview can never be downloaded as ``video``.
             p = await _download_via_more_menu(page, kind, stamp, debug)
             if p:
                 return p
+            if kind == "audio":
+                p = await _download_via_media_src(page, stamp, kind)
+                if p:
+                    return p
             if attempt < attempts - 1:
                 log(f"  {kind} not downloadable yet; waiting and reloading "
                     f"(attempt {attempt + 1}/{attempts})")
@@ -1206,9 +1283,15 @@ async def run(args) -> int:
                 return 5
             await dismiss_dialogs(page)
 
-        # Generate artifacts (skip if download-only).
+        # Generate artifacts (skip if download-only). Remember how many ready
+        # media cards existed first, so an older Play button cannot satisfy the
+        # wait for the new generation.
+        baseline_artifact_counts = {}
         if not args.download_only:
             for kind in artifacts:
+                if kind in ("audio", "video"):
+                    baseline_artifact_counts[kind] = await page.locator(
+                        "artifact-library-item").count()
                 if kind == "audio":
                     instr, fmt = args.instructions, args.audio_format
                 elif kind == "video":
@@ -1223,7 +1306,9 @@ async def run(args) -> int:
         # Wait + download each.
         saved = []
         for kind in artifacts:
-            if await wait_artifact_ready(page, kind, args.timeout, args.debug):
+            baseline = baseline_artifact_counts.get(kind)
+            if await wait_artifact_ready(page, kind, args.timeout, args.debug,
+                                         baseline):
                 p = await download_artifact(page, kind, args.debug)
                 if p:
                     if kind == "video" and not args.keep_outro:
