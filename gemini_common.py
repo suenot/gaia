@@ -139,18 +139,18 @@ async def context_logged_in(context) -> bool:
         return False
 
 
-async def prepare_persistent_page(context, cookies: List[dict]):
+async def prepare_persistent_page(context, cookies: List[dict], *, force_bootstrap: bool = False):
     """Get a page from the persistent context, bootstrapping the Google session
     from Firefox cookies ONLY if the context isn't already logged in. After the
     first bootstrap, Camoufox keeps its own (rotating) session, so we never touch
     the Firefox cookie again — that is what stops logging the user out of Firefox.
     """
     page = context.pages[0] if context.pages else await context.new_page()
-    if await context_logged_in(context):
+    if await context_logged_in(context) and not force_bootstrap:
         log("  reusing Camoufox's own persisted session (Firefox not touched)")
     else:
         await context.add_cookies(cookies)
-        log("  bootstrapped session from Firefox cookies (first run / logged out)")
+        log("  bootstrapped session from Firefox cookies")
     return page
 
 
@@ -188,11 +188,36 @@ async def find_editor(page, require_visible: bool = True):
 
 
 async def is_logged_in(page) -> bool:
+    """True only when the *signed-in* app is up.
+
+    The signed-out gemini.google.com landing page also renders a prompt editor, so
+    "editor exists" alone reports a false positive — the run then proceeds and every
+    tool in the '+' menu is disabled, which surfaces much later as an unrelated click
+    timeout. Require a positive signed-in signal and the absence of a Sign in CTA.
+    """
     url = page.url
     if "accounts.google.com" in url or "/ServiceLogin" in url:
         return False
     editor, _ = await find_editor(page)
-    return editor is not None
+    if editor is None:
+        return False
+    try:
+        signed_out = await page.evaluate(
+            """() => {
+                const t = (document.body.innerText || '').toLowerCase();
+                const cta = /\\bsign in\\b|\\bвойти\\b|sign in to try tools/.test(t);
+                const acct = document.querySelector(
+                    "a[href*='SignOutOptions'], [aria-label*='Google Account' i], "
+                    + "[aria-label*='Аккаунт Google' i]") !== null;
+                return cta && !acct;
+            }"""
+        )
+    except Exception:  # noqa: BLE001
+        signed_out = False
+    if signed_out:
+        log("  page renders the signed-out landing (Sign in CTA, no account chip)")
+        return False
+    return True
 
 
 async def navigate(page, url: str, debug: bool = False, shot_name: str = "01_loaded"):
@@ -286,6 +311,21 @@ async def fill_prompt(page, text: str, attempts: int = 4) -> bool:
     return False
 
 
+async def _composer_has_text(page) -> bool:
+    """True while the prompt editor still holds unsent text."""
+    try:
+        return bool(await page.evaluate(
+            """() => {
+                const ed = document.querySelector("div.ql-editor[contenteditable='true']")
+                    || document.querySelector("rich-textarea div[contenteditable='true']");
+                if (!ed) return false;
+                return (ed.innerText || '').trim().length > 0;
+            }"""
+        ))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 async def send_message(page) -> bool:
     """Submit the current prompt. Enter sends in Gemini; the editor is focused
     after fill(), so press Enter on it (re-querying to be safe)."""
@@ -294,10 +334,136 @@ async def send_message(page) -> bool:
         return False
     try:
         await editor.press("Enter")
-        return True
     except Exception as e:  # noqa: BLE001
         log(f"  send failed: {str(e).splitlines()[0]}")
+    await page.wait_for_timeout(1200)
+    # The composer clears when the message is accepted. If the text is still
+    # there, the locator keypress was swallowed - retry as a global trusted
+    # keypress on the focused editor (the path that works in Camoufox).
+    if await _composer_has_text(page):
+        try:
+            await page.keyboard.press("Enter")
+        except Exception as e:  # noqa: BLE001
+            log(f"  keyboard send failed: {str(e).splitlines()[0]}")
+            return False
+        await page.wait_for_timeout(1500)
+        if await _composer_has_text(page):
+            log("  prompt still unsent after two Enters")
+            return False
+    return True
+
+
+# --------------------------------------------------------------------------- #
+# Attachments. Gemini has no persistent <input type=file>: the '+' menu item opens
+# the native file chooser, which Playwright intercepts. Shared so the image script
+# can attach reference images the same way the video script attaches its source.
+
+UPLOAD_TOOLS_BTN = "button[aria-label='Upload & tools']"
+
+ATTACHMENT_PREVIEW = (
+    "img[src^='blob:'], img[src^='data:image'], "
+    "[data-test-id*='file' i], [class*='attachment' i], [class*='thumbnail' i], "
+    "[class*='uploaded' i], [aria-label*='Remove' i]"
+)
+
+
+async def open_upload_menu(page) -> bool:
+    """Open the '+' (Upload & tools) menu. Returns False if it never opens."""
+    btn = page.locator(UPLOAD_TOOLS_BTN)
+    if await btn.count() == 0:
+        log(f"  '{UPLOAD_TOOLS_BTN}' not found")
         return False
+    # The composer keeps animating (mat-ripple), so Playwright's actionability check
+    # can stall on this button for a full timeout. Short real click, then dispatch the
+    # DOM click directly; retry once, since this menu gates uploads and tools.
+    for attempt in (1, 2):
+        try:
+            await btn.first.click(timeout=6_000)
+        except Exception as e:  # noqa: BLE001
+            log(f"  upload-menu click stalled ({str(e).splitlines()[0][:50]}); JS click")
+            try:
+                # A bare el.click() does not open this menu - the composer
+                # listens for pointer events. Dispatch the full sequence.
+                await btn.first.evaluate("""el => {
+                    const box = el.getBoundingClientRect();
+                    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+                    for (const type of ['pointerover', 'pointerdown', 'mousedown',
+                                        'pointerup', 'mouseup', 'click']) {
+                      el.dispatchEvent(new MouseEvent(type, {bubbles: true,
+                        cancelable: true, composed: true, clientX: cx, clientY: cy}));
+                    }
+                }""")
+            except Exception as e2:  # noqa: BLE001
+                log(f"  JS click failed too: {str(e2).splitlines()[0][:60]}")
+                return False
+        try:
+            await page.wait_for_selector("[role=menu]", state="visible", timeout=6000)
+        except Exception:  # noqa: BLE001
+            if attempt == 2:
+                log("  upload menu never opened")
+                return False
+            await page.wait_for_timeout(1200)
+            continue
+        await page.wait_for_timeout(400)
+        return True
+    return False
+
+
+async def wait_attachment(page, expected: int = 1, timeout_s: int = 60) -> bool:
+    """Wait until `expected` upload previews have finished appearing."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        try:
+            if await page.locator(ATTACHMENT_PREVIEW).count() >= expected:
+                await page.wait_for_timeout(2000)  # let processing settle
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+        await page.wait_for_timeout(1000)
+    log(f"  (fewer than {expected} attachment previews within timeout)")
+    return False
+
+
+async def attach_files(page, paths, debug: bool = False) -> bool:
+    """Attach one or more files through '+' -> Upload files."""
+    paths = [str(p) for p in paths]
+    if not paths:
+        return True
+    if not await open_upload_menu(page):
+        return False
+    up = page.locator("button[aria-label*='Upload files' i]")
+    if await up.count() == 0:
+        up = page.locator("[role=menuitem]:has-text('Upload files')")
+    if await up.count() == 0:
+        log("  'Upload files' item not found")
+        await page.keyboard.press("Escape")
+        return False
+    try:
+        # Trusted mouse input can stall on this menu item (Camoufox humanize
+        # pipeline); focus the item via JS and activate it with a trusted
+        # Space keypress instead - Enter is ignored, Space opens the chooser.
+        focused = await page.evaluate("""() => {
+          const menu = document.querySelector('[role=menu]');
+          if (!menu) return false;
+          const item = [...menu.querySelectorAll('[role=menuitem], button, a')]
+            .find(el => /upload files/i.test((el.getAttribute('aria-label')||el.innerText||'')));
+          if (!item) return false;
+          item.focus && item.focus();
+          return document.activeElement === item;
+        }""")
+        if not focused:
+            raise RuntimeError("Upload files item not focusable")
+        async with page.expect_file_chooser(timeout=15_000) as fc_info:
+            await page.keyboard.press(" ")
+        chooser = await fc_info.value
+        await chooser.set_files(paths)   # the chooser accepts the whole batch at once
+        log(f"  {len(paths)} file(s) sent to file chooser")
+    except Exception as e:  # noqa: BLE001
+        log(f"  file chooser failed: {str(e).splitlines()[0]}")
+        return False
+    ok = await wait_attachment(page, expected=len(paths))
+    await shot(page, "12_attached", debug)
+    return ok
 
 
 async def hold(page) -> None:

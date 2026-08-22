@@ -39,6 +39,7 @@ from gemini_common import (
     fill_prompt,
     send_message,
     hold,
+    attach_files,
 )
 
 # JS: collect candidate generated-image sources currently in the DOM.
@@ -160,6 +161,14 @@ async def run(args) -> int:
         return 2
     log(f"Prompt ({len(prompt)} chars): {prompt[:80].replace(chr(10), ' ')}...")
 
+    refs = [Path(r) for r in (args.ref or [])]
+    missing = [r for r in refs if not r.exists()]
+    if missing:
+        log(f"ERROR: reference image(s) not found: {[str(m) for m in missing]}")
+        return 2
+    if refs:
+        log(f"References: {', '.join(r.name for r in refs)}")
+
     async with make_camoufox(args.headless) as context:
         page = await open_app(context, cookies, debug=args.debug)
 
@@ -186,6 +195,20 @@ async def run(args) -> int:
         except Exception:  # noqa: BLE001
             baseline_imgs = []
         baseline = {im["src"] for im in baseline_imgs}
+
+        # Reference images (character sheets, location plates, props). Attaching them
+        # is what actually holds continuity across scenes — describing a character in
+        # words drifts, and a single stray adjective ("reflected in his glasses") is
+        # enough to change who he is from one frame to the next.
+        if refs:
+            log(f"Attaching {len(refs)} reference image(s)...")
+            if not await attach_files(page, refs, args.debug):
+                log("ERROR: could not attach the reference images.")
+                await shot(page, "02b_attach_failed")
+                if args.keep_open:
+                    await hold(page)
+                return 6
+            log("References attached ✓")
 
         await shot(page, "03_before_type", args.debug)
         if not await fill_prompt(page, prompt) or not await send_message(page):
@@ -220,6 +243,11 @@ def parse_args(argv: Optional[List[str]] = None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--profile", default="default-release",
                    help="Firefox profile name/dir/path logged into Gemini (default: default-release)")
+    p.add_argument("--ref", action="append", default=[], metavar="PATH",
+                   help="Reference image to attach before the prompt (repeatable). "
+                        "Use for character sheets / location plates so scenes stay "
+                        "consistent. Refer to them in the prompt by order, e.g. "
+                        "'image 1 is the character, image 2 is the room'.")
     p.add_argument("--prompt", default="", help="Inline prompt text")
     p.add_argument("--prompt-file", default="", help="Read prompt from this file")
     p.add_argument("--headless", action="store_true",
