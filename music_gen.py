@@ -130,6 +130,12 @@ JS_COLLECT_AUDIO = r"""
         }
         if (src) out.push({ src, kind: 'audio', dur: el.duration || 0 });
       }
+      // The Gemini "Music" mode renders the track as a <video> (audio + cover
+      // art) served from *.usercontent.google.com.
+      if (tag === 'video') {
+        const src = el.currentSrc || el.src || '';
+        if (/usercontent\.google\.com/.test(src)) out.push({ src, kind: 'video', dur: el.duration || 0 });
+      }
       if (tag === 'a') {
         const href = el.href || '';
         const dl = el.getAttribute('download');
@@ -249,6 +255,8 @@ def _ext_from(src: str, ctype: str) -> str:
         if f".{e}" in s:
             return e
     ct = (ctype or "").lower()
+    if "video" in ct:
+        return "mp4"
     if "wav" in ct:
         return "wav"
     if "mpeg" in ct or "mp3" in ct:
@@ -277,6 +285,10 @@ async def download_audio(page, audio: dict, debug: bool) -> Optional[Path]:
                 if len(body) > 2_000:
                     ct = resp.headers.get("content-type", "")
                     out = OUTPUT_DIR / f"music_{stamp}.{_ext_from(src, ct)}"
+                    n = 2
+                    while out.exists():
+                        out = OUTPUT_DIR / f"music_{stamp}_{n}.{_ext_from(src, ct)}"
+                        n += 1
                     out.write_bytes(body)
                     log(f"  saved {out.name} via context.request ({len(body):,} bytes, ct={ct})")
                     return out
@@ -457,6 +469,29 @@ async def enable_create_music(page, debug: bool) -> Tuple[bool, bool]:
     return True, opened_new
 
 
+async def set_music_chip(page, chip: str, option: str, debug: bool) -> bool:
+    """Pick an option in a Music-mode composer chip (Length / Vocals / Genre)."""
+    btn = page.locator(f"button:has-text('{chip}')")
+    try:
+        if await btn.count() == 0:
+            log(f"  chip '{chip}' not found")
+            return False
+        await btn.first.click(timeout=4000)
+        item = page.locator(f"[role=menuitemradio][aria-label^='{option}' i]")
+        await item.first.wait_for(state="visible", timeout=5000)
+        await item.first.click(timeout=4000)
+        await page.wait_for_timeout(500)
+        log(f"  chip {chip} -> {option}")
+        return True
+    except Exception as e:  # noqa: BLE001
+        log(f"  could not set {chip}={option}: {str(e).splitlines()[0][:80]}")
+        try:
+            await page.keyboard.press("Escape")
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+
+
 async def submit_and_verify(page, prompt: str) -> bool:
     snippet = " ".join(prompt.split())[:25]
     btn = page.locator("button[aria-label='Send message']")
@@ -532,6 +567,12 @@ async def run_gemini(page, prompt: str, args) -> Tuple[int, Optional[Path]]:
         # Drive the studio generically.
         return await run_generic_studio(newp, prompt, args, tag="gemini-studio")
 
+    # Music mode composer chips (Length: Short/Standard; Vocals: Custom/Vocals on/Instrumental).
+    if args.length:
+        await set_music_chip(page, "Length", args.length, args.debug)
+    if args.vocals:
+        await set_music_chip(page, "Vocals", args.vocals, args.debug)
+
     # Inline flow: type prompt + send in the same composer.
     if not await fill_prompt(page, prompt):
         log("  [gemini] could not enter the prompt.")
@@ -567,9 +608,12 @@ async def run_gemini(page, prompt: str, args) -> Tuple[int, Optional[Path]]:
             await deep_dump(page, "gemini no audio")
         return 5, None
 
-    auds.sort(key=lambda a: (a.get("dur") or 0), reverse=True)
-    log(f"  [gemini] detected {len(auds)} audio source(s); downloading best...")
-    saved = await download_audio(page, auds[0], args.debug)
+    # Music mode may return more than one variant: download every new track.
+    log(f"  [gemini] detected {len(auds)} audio source(s); downloading all...")
+    saved = None
+    for a in auds:
+        got = await download_audio(page, a, args.debug)
+        saved = saved or got
     if saved is None:
         saved = await download_via_ui(page, args.debug)
     return (0, saved) if saved else (5, None)
@@ -806,6 +850,9 @@ def parse_args(argv: Optional[List[str]] = None):
     p.add_argument("--timeout", type=int, default=300, help="Max seconds to wait for audio (default 300)")
     p.add_argument("--quiet", type=float, default=8.0,
                    help="Seconds of no change before generation is considered done (default 8)")
+    p.add_argument("--length", default="", help="Gemini Music 'Length' chip option, e.g. Short | Standard")
+    p.add_argument("--vocals", default="",
+                   help="Gemini Music 'Vocals' chip option, e.g. Custom | 'Vocals on' | Instrumental")
     p.add_argument("--headless", action="store_true", help="Run headless (visible is more reliable)")
     p.add_argument("--keep-open", action="store_true", help="Keep the browser open after finishing")
     p.add_argument("--debug", action="store_true", help="Save step screenshots to ./debug (music_NN_*.png)")
