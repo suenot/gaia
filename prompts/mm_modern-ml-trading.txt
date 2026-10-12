@@ -1,0 +1,15 @@
+Electro-swing TV cartoon theme song, bouncy swing drums, punchy brass section, upright bass, scratchy vinyl feel, playful female lead vocals, tempo 126 BPM, short instrumental intro then straight into the catchy chorus, big ending hit.
+
+Title: "Modern ML for Trading"
+
+Lyrics:
+[Verse]
+An owl in a lab with a data seed,
+Grows a little model on features to feed,
+Train it, test it, walk it forward in time,
+No peeking at the future, keep the backtest clean!
+[Chorus]
+Fit it right, don't overfit,
+Validate every little bit,
+Trees and nets that learn and grow,
+Modern ML for Trading, steal the show!

@@ -480,7 +480,7 @@ async def set_music_chip(page, chip: str, option: str, debug: bool) -> bool:
         item = page.locator(f"[role=menuitemradio][aria-label^='{option}' i]")
         await item.first.wait_for(state="visible", timeout=5000)
         await item.first.click(timeout=4000)
-        await page.wait_for_timeout(500)
+        await _wait_chip_menu_closed(page)
         log(f"  chip {chip} -> {option}")
         return True
     except Exception as e:  # noqa: BLE001
@@ -489,7 +489,17 @@ async def set_music_chip(page, chip: str, option: str, debug: bool) -> bool:
             await page.keyboard.press("Escape")
         except Exception:  # noqa: BLE001
             pass
+        # A menu left open swallows later clicks (e.g. the Send button).
+        await _wait_chip_menu_closed(page)
         return False
+
+
+async def _wait_chip_menu_closed(page) -> None:
+    try:
+        await page.locator("[role=menuitemradio]").first.wait_for(state="hidden", timeout=4000)
+    except Exception:  # noqa: BLE001
+        pass
+    await page.wait_for_timeout(500)
 
 
 async def submit_and_verify(page, prompt: str) -> bool:
