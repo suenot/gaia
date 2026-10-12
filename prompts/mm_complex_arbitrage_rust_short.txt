@@ -1,0 +1,11 @@
+Length: 0:25. A very short 25-second jingle for a children's cartoon about a crab sailor on a ship.
+Rollicking sea-shanty with stomping boots, accordion, fiddle and a gang-vocal chorus of sailors, 120 BPM: 3-second instrumental intro, one chorus, then a big ending hit.
+
+Title: "The Arbitrage Crab"
+
+Lyrics:
+[Chorus]
+Heave ho, the cycle flows,
+Graph and matrix, the Rust-crab knows,
+Futures, spot and copula sea,
+Complex arbitrage, sail with me!

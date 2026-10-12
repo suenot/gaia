@@ -348,7 +348,7 @@ async def collect_audio(page) -> List[dict]:
 
 
 async def wait_for_audio(page, timeout_s: int, quiet_s: float, debug: bool,
-                         baseline: Optional[set] = None) -> List[dict]:
+                         baseline: Optional[set] = None, reload_after_s: float = 150) -> List[dict]:
     """Poll until generated <audio> / audio links appear and stabilize.
 
     `baseline` is a set of audio srcs that existed BEFORE we requested generation
@@ -362,7 +362,18 @@ async def wait_for_audio(page, timeout_s: int, quiet_s: float, debug: bool,
     last_log = 0.0
     start = time.time()
     shot_taken = False
+    reloaded = False
     while time.time() < deadline:
+        # The live chat sometimes never renders the reply (track or refusal);
+        # a single reload of the conversation shows it.
+        if not seen and not reloaded and time.time() - start > reload_after_s and "/app/" in page.url:
+            log("  no result yet; reloading the conversation once")
+            try:
+                await page.reload(wait_until="domcontentloaded", timeout=60_000)
+                await page.wait_for_timeout(5000)
+            except Exception as e:  # noqa: BLE001
+                log(f"  reload failed: {str(e).splitlines()[0][:80]}")
+            reloaded = True
         auds = await collect_audio(page)
         changed = False
         for a in auds:
@@ -614,6 +625,12 @@ async def run_gemini(page, prompt: str, args) -> Tuple[int, Optional[Path]]:
     await shot(page, "music_80_result", args.debug)
     if not auds:
         log("  [gemini] no audio detected.")
+        try:
+            replies = await page.locator("model-response").all_inner_texts()
+            if replies:
+                log(f"  [gemini] reply: {' '.join(replies[-1].split())[:300]}")
+        except Exception:  # noqa: BLE001
+            pass
         if args.explore:
             await deep_dump(page, "gemini no audio")
         return 5, None

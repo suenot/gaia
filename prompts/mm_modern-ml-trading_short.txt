@@ -1,0 +1,11 @@
+Length: 0:25. A very short 25-second jingle for a children's cartoon about a clever owl scientist growing little models in a lab.
+electro-swing with bouncy swing drums, punchy brass, upright bass, playful female lead vocals, 126 BPM: 3-second instrumental intro, one chorus, then a big ending hit.
+
+Title: "Modern ML for Trading"
+
+Lyrics:
+[Chorus]
+Fit it right, don't overfit,
+Validate every little bit,
+Trees and nets that learn and grow,
+Modern ML for Trading, steal the show!
