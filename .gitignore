@@ -6,3 +6,22 @@ __pycache__/
 .camoufox_profile/
 .camoufox_fp.pkl
 venv/
+
+# dev-artifacts (sdvg)
+node_modules/
+dist/
+build/
+target/
+__pycache__/
+.venv/
+venv/
+.next/
+.DS_Store
+.env
+.env.*
+!.env.example
+.camoufox*/
+.profile/
+prof-*/
+graphify-out/.graphify_*
+*.xcuserstate

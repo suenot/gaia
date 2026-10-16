@@ -1,0 +1,15 @@
+Create a short, catchy 25-second TV-cartoon theme song, rollicking sea-shanty style with stomping boots, accordion, fiddle and a gang-vocal chorus of sailors, energetic and fun, tempo 120 BPM, big ending hit.
+
+Title: "The Arbitrage Crab"
+
+Lyrics:
+[Verse]
+A crab sails out in a Rust-iron ship,
+Through markets wide on a currency trip,
+Three ports in a loop and the prices don't match,
+Haul in the spread before the gap's too late to catch!
+[Chorus]
+Heave ho, the cycle flows,
+Graph and matrix, the Rust-crab knows,
+Futures, spot and copula sea,
+Complex arbitrage, sail with me!
