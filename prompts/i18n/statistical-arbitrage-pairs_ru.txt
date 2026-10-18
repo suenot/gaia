@@ -1,0 +1,15 @@
+Length: 0:29. A very short 29-second jingle for a children's cartoon about a pianist cat and two penguins on a vaudeville stage. Sung in Russian.
+Ragtime vaudeville with honky-tonk piano, banjo, tuba, brushed drums and a bouncy male crooner, 150 BPM: no long intro, vocals start at once, one chorus, then a big ending hit.
+
+Title: "Танец спреда"
+
+Lyrics (sing exactly these Russian lyrics, no English words):
+[Chorus]
+Две акции зашли в график, ха!
+Танцуют рядом, потом врозь,
+Купи дешевую, продай дорогую,
+Спред наша мелодия,
+Торгуй спредом, торгуй спредом,
+Расстояние шепчет: быть вместе,
+Коинтеграция бьет в колокол,
+Фильтр Калмана знает толк.

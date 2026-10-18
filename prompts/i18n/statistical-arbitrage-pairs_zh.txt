@@ -1,0 +1,15 @@
+Length: 0:29. A very short 29-second jingle for a children's cartoon about a pianist cat and two penguins on a vaudeville stage. Sung in Mandarin Chinese.
+Ragtime vaudeville with honky-tonk piano, banjo, tuba, brushed drums and a bouncy male crooner, 150 BPM: no long intro, vocals start at once, one chorus, then a big ending hit.
+
+Title: "价差舞步"
+
+Lyrics (sing exactly these Mandarin Chinese lyrics, no English words):
+[Chorus]
+两只股票走进图表，哈！
+时而靠近，时而分开，
+买便宜的，卖贵的，
+价差就是我们的曲调，
+交易价差，交易价差，
+距离说它们该结婚，
+协整敲响钟声，
+卡尔曼滤波最清楚。

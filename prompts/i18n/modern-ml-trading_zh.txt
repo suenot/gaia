@@ -1,0 +1,11 @@
+Length: 0:25. A very short 25-second jingle for a children's cartoon about a clever owl scientist growing little models in a lab. Sung in Mandarin Chinese.
+electro-swing with bouncy swing drums, punchy brass, upright bass, playful female lead vocals, 126 BPM: 3-second instrumental intro, one chorus, then a big ending hit.
+
+Title: "现代机器学习交易"
+
+Lyrics (sing exactly these Mandarin Chinese lyrics, no English words):
+[Chorus]
+拟合刚好，别过拟合，
+每一步都要验证，
+树和网络，学习成长，
+现代机器学习，交易之星！

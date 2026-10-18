@@ -505,6 +505,35 @@ async def set_music_chip(page, chip: str, option: str, debug: bool) -> bool:
         return False
 
 
+async def set_music_model(page, model: str, debug: bool) -> bool:
+    """Pick the Gemini model in the composer's model picker (e.g. '4 Argon', '3.1 Pro')."""
+    import re as _re
+    try:
+        btn = page.locator("button").filter(has_text=_re.compile(r"(Flash|Pro|Argon)", _re.I)).filter(visible=True)
+        n = await btn.count()
+        if n == 0:
+            log("  model picker not found")
+            return False
+        await btn.last.click(timeout=4000)
+        await page.wait_for_timeout(800)
+        await shot(page, "music_model_menu", debug)
+        item = page.locator("[role=menuitemradio], [role=menuitem], [role=option]").filter(has_text=_re.compile(_re.escape(model), _re.I))
+        await item.first.wait_for(state="visible", timeout=5000)
+        await item.first.click(timeout=4000)
+        await _wait_chip_menu_closed(page)
+        log(f"  model -> {model}")
+        await shot(page, "music_model_set", debug)
+        return True
+    except Exception as e:  # noqa: BLE001
+        log(f"  could not set model={model}: {str(e).splitlines()[0][:80]}")
+        try:
+            await page.keyboard.press("Escape")
+        except Exception:  # noqa: BLE001
+            pass
+        await _wait_chip_menu_closed(page)
+        return False
+
+
 async def _wait_chip_menu_closed(page) -> None:
     try:
         await page.locator("[role=menuitemradio]").first.wait_for(state="hidden", timeout=4000)
@@ -587,6 +616,9 @@ async def run_gemini(page, prompt: str, args) -> Tuple[int, Optional[Path]]:
         await shot(newp, "music_13_studio_tab", args.debug)
         # Drive the studio generically.
         return await run_generic_studio(newp, prompt, args, tag="gemini-studio")
+
+    if getattr(args, "model", ""):
+        await set_music_model(page, args.model, args.debug)
 
     # Music mode composer chips (Length: Short/Standard; Vocals: Custom/Vocals on/Instrumental).
     if args.length:
@@ -878,6 +910,8 @@ def parse_args(argv: Optional[List[str]] = None):
     p.add_argument("--quiet", type=float, default=8.0,
                    help="Seconds of no change before generation is considered done (default 8)")
     p.add_argument("--length", default="", help="Gemini Music 'Length' chip option, e.g. Short | Standard")
+    p.add_argument("--model", default="",
+                   help="Gemini model in the composer picker, e.g. 'Argon' | '3.1 Pro' | '3.8 Flash'")
     p.add_argument("--vocals", default="",
                    help="Gemini Music 'Vocals' chip option, e.g. Custom | 'Vocals on' | Instrumental")
     p.add_argument("--headless", action="store_true", help="Run headless (visible is more reliable)")
