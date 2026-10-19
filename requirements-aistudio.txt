@@ -1,0 +1,8 @@
+# AI Studio speech (STT / TTS / voice replication): aistudio_speech.py
+# Python 3.11-3.13, same as the rest of GAIA. Kept apart from requirements.txt so
+# the Camoufox/Playwright pins are not touched.
+#
+# google-genai 2.25.0 is the first release with client.voices (Voices API);
+# 2.31.0 is the latest on PyPI (2026-10-19). Both were exercised against the
+# request/response shapes in tests/aistudio.
+google-genai>=2.25.0,<3

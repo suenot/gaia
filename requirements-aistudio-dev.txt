@@ -1,0 +1,3 @@
+# Tests for aistudio_speech.py: pip install -r requirements-aistudio-dev.txt
+-r requirements-aistudio.txt
+pytest>=8
