@@ -7,13 +7,17 @@
 GAIA drives Google's creative AI — **Gemini, Flow, NotebookLM** — to generate
 **text, images, video, music, slides and podcasts**, with **no API keys**: it just
 uses your **logged-in Firefox/Google session**, through **Camoufox** (an anti-detect
-Firefox build) + Playwright.
+Firefox build) + Playwright. (The one exception is the AI Studio speech tools below:
+they call a documented API with an API key you create yourself.)
 
 - **Gemini** — text→image, image→video and text→video (Veo)
 - **Flow** — Veo film clips in a Flow project (Nano Banana edits, Veo 3, Omni agent)
 - **NotebookLM** — create notebooks, add/discover sources, generate & download
   **Audio Overviews (podcasts)** and **Slide Decks** in any language, with steering prompts
 - **Music** — Gemini "Create music" / Labs MusicFX *(experimental)*
+- **AI Studio speech** — speech-to-text, text-to-speech and replicating **your own**
+  voice through the documented Gemini API. This is the one part that uses an API key
+  and not the browser session — see [AI Studio speech](#ai-studio-speech-stt--tts--voice-replication)
 
 ## 🏭 The Content Factory
 
@@ -88,6 +92,7 @@ python3 login_camoufox.py --bootstrap
 | `notebooklm_gen.py`   | NotebookLM: create notebook, add/discover sources, generate & download **Audio Overview + Slide Deck** in any language — **verified** |
 | `youtube_upload.py`   | YouTube Studio: upload a video with title/description/tags/thumbnail, audience + visibility, from a `video_maker` metadata JSON — no Data API |
 | `music_gen.py`        | Music: Gemini "Create music" / Labs MusicFX — *built, not yet verified end-to-end* |
+| `aistudio_speech.py`  | AI Studio speech CLI: `check`, `voices list/replicate/delete`, `consent-text`, `tts`, `stt` — Gemini API + your own key, **not** the Camoufox session (package `aistudio/`, `requirements-aistudio.txt`, tests in `tests/aistudio/`) |
 | `gemini_common.py`    | Shared helpers: persistent launch, cookies, prompt editor, screenshots |
 | `cookies_firefox.py`  | Extract & convert Firefox cookies → Playwright format |
 | `explore.py`          | Dev tool: deep-walk the DOM (incl. shadow roots) to find selectors if the UI changes |
@@ -264,6 +269,162 @@ public), `--made-for-kids` (default: not for kids), `--timeout`, `--headless`,
 > Studio's web-component UI changes often; if a step misses, run with `--debug`
 > and inspect `debug/yt_*.png` — each step is screenshotted, and failures emit a
 > shadow-DOM deep-dump of the live controls.
+
+## AI Studio speech (STT / TTS / voice replication)
+
+`aistudio_speech.py` turns audio into text, text into audio, and can replicate
+**your own voice**, using the documented **Gemini API** with an AI Studio key and the
+`google-genai` SDK. It is the one GAIA tool that does **not** use the logged-in
+Camoufox session and never drives the AI Studio web UI (that would be fragile and
+against the grain of Google's terms for a workflow that handles voice biometrics).
+The "no API keys" line above is true for every other tool; this one needs a key *you*
+create. Background and sources: [`docs/aistudio-speech-research.md`](docs/aistudio-speech-research.md).
+
+| Feature | Model | Notes |
+|---|---|---|
+| Speech-to-text | `gemini-3.5-transcribe` | 85+ languages incl. `ru-RU`, optional speaker diarization (`spk_1`...), word timestamps, smart mode, custom vocabulary |
+| Text-to-speech | `gemini-3.8-flash-lite-tts` (default), `gemini-3.8-flash-tts` | 30 prebuilt voices + the Voice Library, style control, inline tags such as `<short pause>`, WAV 24 kHz mono |
+| Voice replication | same TTS models | 10-30 s reference + a spoken consent statement, same speaker; Google verifies both before creating the voice |
+
+### Setup
+
+```bash
+python3.11 -m venv venv && source venv/bin/activate     # Python 3.11-3.13, same as the rest of GAIA
+pip install -r requirements-aistudio.txt                # google-genai>=2.25.0,<3 (needs ffmpeg + ffprobe on PATH)
+```
+
+1. **Create the key** in [Google AI Studio](https://aistudio.google.com/apikey) on a Google
+   Cloud project **with billing linked** (the paid tier). On the free tier ("Unpaid
+   Services") Google may use your content to improve its products and humans may review it;
+   a voice sample is biometric data, so use the paid tier for voice samples and for any
+   private audio. No API call reveals the tier, so tell GAIA once: `GAIA_AISTUDIO_PAID_PROJECT=1`.
+2. **Store the key outside the repo**, never in a file inside it:
+   ```bash
+   mkdir -p ~/.config/gaia && chmod 700 ~/.config/gaia
+   printf 'GEMINI_API_KEY=your-key\nGAIA_AISTUDIO_PAID_PROJECT=1\n' > ~/.config/gaia/aistudio.env
+   chmod 600 ~/.config/gaia/aistudio.env     # the file is refused unless its mode is 0600
+   ```
+   or export `GEMINI_API_KEY` (the environment wins). The key is never printed, logged or
+   written by GAIA, and it is redacted from every error message. (`XDG_CONFIG_HOME` is honored;
+   `GAIA_CONFIG_DIR` overrides the whole directory.)
+3. `python3 aistudio_speech.py check` — verifies the key, SDK, ffmpeg and that the three models
+   and the Voices endpoint are reachable (no cost). `check --dry-run` makes no network call.
+
+### Commands
+
+```bash
+# Prebuilt and library voices (free to list)
+python3 aistudio_speech.py voices list --lang ru-RU --type prebuilt
+
+# Text -> speech. --out-dir is required and must be outside this repo.
+python3 aistudio_speech.py tts --text-file script.txt --voice Kore --style "calm, warm" \
+    --out-dir /abs/path/out                       # -> tts-<hash>.wav (24 kHz mono 16-bit)
+python3 aistudio_speech.py tts --text-file script.txt --voice Kore --out-dir /abs/out --dry-run   # request shape + cost estimate, text elided
+python3 aistudio_speech.py tts --text-file talk.txt --speaker Anna=Kore --speaker Boris=Puck \
+    --out-dir /abs/out                            # lines "Anna: ..." / "Boris: ..." -> one request per turn, stitched
+python3 aistudio_speech.py tts --text-file book.txt --voice me --format mp3 --out-dir /abs/out   # long text is chunked and stitched
+
+# Speech -> text (private audio: absolute path outside the repo)
+python3 aistudio_speech.py stt --input /abs/call.m4a --lang ru-RU --diarize --words \
+    --format txt --format srt --format json --out-dir /abs/out
+python3 aistudio_speech.py stt --input /abs/call.m4a --out-dir /abs/out --dry-run               # preflight + request shape, nothing sent
+```
+
+`stt` flags: `--lang` (BCP-47 hint, repeatable; default auto-detect), `--diarize` (up to 8
+speakers, experimental from 3), `--words` (word timestamps, needed for `srt`/`vtt`, may reduce
+accuracy), `--smart` (no disfluencies, formatted numbers), `--term`/`--vocab-file` (custom
+vocabulary). Limits enforced locally: 1 h per file, **30 min with `--diarize`/`--words`**, and
+the combinations the API rejects (vocabulary or `--smart` together with diarization/timestamps).
+Audio under ~14 MB goes inline; larger files go through the Files API and are **deleted
+afterwards** (they would live 48 h). Google publishes no Russian WER or diarization benchmark:
+measure on your own non-private audio before relying on it.
+
+`--api generate-content` (default) or `--api interactions` (env `GAIA_AISTUDIO_API`) picks the
+request surface; Google calls Interactions GA and recommended, `generateContent` legacy but
+supported. Interactions requests are always sent with `store=false` (otherwise Google keeps
+them for up to 55 days). The code for both lives behind `aistudio/client.py`.
+
+Exit codes: `0` ok · `2` bad args · `3` no key / auth failed · `4` audio or privacy preflight
+failed · `5` API refused (region, quota, consent mismatch, server error) · `6` output not produced.
+
+### Replicating your own voice
+
+Only your own voice. Google requires two recordings by the **same adult speaker** — a clean
+10-30 s reference and the fixed consent statement for the language read verbatim — and checks
+that the speakers match.
+
+```bash
+python3 aistudio_speech.py consent-text --lang ru-RU      # prints the exact statement + a recording checklist
+# record both clips in one sitting, same mic and room, then (absolute paths, outside the repo):
+python3 aistudio_speech.py voices replicate --reference /abs/ref.wav --consent /abs/consent.wav \
+    --lang ru-RU --alias me --no-store --i-am-the-speaker --dry-run     # preflight both clips, print the request
+python3 aistudio_speech.py voices replicate ... --no-store --i-am-the-speaker --audition-out-dir /abs/check
+python3 aistudio_speech.py tts --text-file script.txt --voice me --out-dir /abs/out
+python3 aistudio_speech.py voices list --local             # your aliases (never shows a key)
+python3 aistudio_speech.py voices delete me                # when the project is over (--dry-run shows what would go)
+```
+
+* `--i-am-the-speaker` is mandatory (plus a typed confirmation on a TTY). Both clips are checked
+  with ffprobe (reference 10-30 s, consent a few seconds, clipping, level mismatch) and converted
+  to 24 kHz mono 16-bit WAV in a temp dir outside the repo that is removed afterwards.
+* `--store` / `--no-store` is always sent explicitly. **Start with `--no-store`** (default): you get
+  a `voicekey_...` valid 7 days and Google keeps nothing. `--store` keeps a `voice_...` at Google
+  (200 per project, expires 1 year after last use); use it only for a voice you will reuse, and delete it afterwards.
+* Local state in `~/.config/gaia/` (mode 0600, never in the repo): `voices.json` (alias -> id/key; a
+  `voicekey_...` is a secret like the API key) and `voice-consent.jsonl` — an append-only consent log with
+  the SHA-256 of the reference and consent clips, the consent language, the SHA-256 of the statement, a
+  timestamp and the voice id. No audio, no transcript.
+* Output carries Google's SynthID watermark and, for replicated voices, C2PA credentials. A single unmodified
+  request is written byte for byte; chunk stitching or MP3/FLAC conversion changes the file (GAIA warns).
+  Do not present synthetic speech as human; follow each platform's labelling rules for synthetic audio.
+* Prohibited: cloning anyone else's voice, impersonation, misrepresenting provenance (Google's Generative AI
+  Prohibited Use Policy). Custom and replicated voices cannot be mixed in one multi-speaker request, hence the
+  turn-by-turn `--speaker` mode.
+
+### Privacy rules (enforced in code)
+
+* **Key:** `GEMINI_API_KEY` or `~/.config/gaia/aistudio.env` (mode 0600; a key file inside the repo is refused).
+  `.gitignore` also blocks `.env*`, `aistudio.env`, `*.voicekey`, `voices.json` and audio files as a second guard.
+* **Private audio:** only **absolute** input paths that resolve (symlinks followed) **outside** this repo and the
+  super-project that embeds it. There is no override flag.
+* **Outputs:** only to the `--out-dir` you choose, outside the repo (never `output/` or `debug/`); files are
+  created with mode 0600, named from a hash or your `--name` slug — never from the source file or a speaker.
+* **Logs:** lengths, durations, model and error codes only. No transcript text, no prompt text, no file names of
+  private audio; `--dry-run` prints request shapes with text and audio elided and voice keys masked.
+* `voices replicate` and `stt` need `GAIA_AISTUDIO_PAID_PROJECT=1` or an explicit `--accept-unpaid-terms` per run.
+
+### Region limits
+
+Voice replication in AI Studio is **not available in Illinois, Texas, the EEA, the UK, Switzerland and India**
+(Google's launch post). The API reference does not say whether the API follows the same rule, so the only
+reliable test is one `voices replicate` from your real location: a region refusal comes back as exit code `5`.
+The Gemini API and AI Studio as a whole are only available in the
+[listed countries](https://ai.google.dev/gemini-api/docs/available-regions) (Russia and Belarus are not on it).
+Do not route around a regional block with a VPN: that misrepresents your location. Check your account's country
+before recording anything.
+
+### Cost notes (paid tier list prices, 2026-10-19; `tts --dry-run` and `stt --dry-run` print an estimate)
+
+* STT `gemini-3.5-transcribe`: about **$0.005 per audio minute** (input $0.003 + text output $0.002).
+* TTS output: `gemini-3.8-flash-tts` **$0.00225 per 10 s**, `gemini-3.8-flash-lite-tts` **$0.0015 per 10 s**
+  (25 audio tokens/s) plus a small text-input charge. **Both TTS prices double on 2027-01-01.**
+  Creating a replicated voice has no separate documented charge; synthesis with it is billed as normal TTS.
+* The free tier is "free of charge" but the content may be used to improve Google products (see Setup).
+* A TTS call returns at most ~10.9 minutes of audio (16,384 output tokens), so long scripts are chunked
+  (`--max-chars`, default 2500) and the WAV chunks are stitched with a short gap (`--gap-ms`).
+
+### Tests
+
+```bash
+pip install -r requirements-aistudio-dev.txt
+python -m pytest tests/aistudio          # offline: no network, no key, synthetic audio only
+GAIA_LIVE=1 python -m pytest tests/aistudio/test_live.py -v    # opt-in, needs a key; synthetic TTS -> STT round trip
+```
+
+The offline suite covers config and the 0600 rule, key redaction, the repo-path guard, request builders against
+golden JSON, the real SDK's wire format through a mocked transport, response parsers, error mapping, the consent
+table (byte for byte against Google's published statements) and every CLI `--dry-run` path. Live tests never
+create a replicated voice; the first replication is a manual step by the account holder.
 
 ## How it works
 
