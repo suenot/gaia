@@ -1,0 +1,16 @@
+{
+ "id": "interactions/SYNTHETIC",
+ "status": "completed",
+ "steps": [
+  {
+   "id": "step_001",
+   "type": "model_output",
+   "content": [
+    {
+     "type": "text",
+     "text": "Привет, как дела?"
+    }
+   ]
+  }
+ ]
+}

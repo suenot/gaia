@@ -1,0 +1,35 @@
+{
+  "api": "interactions",
+  "body": {
+    "generation_config": {
+      "speech_config": [
+        {
+          "voice": "Kore"
+        }
+      ]
+    },
+    "input": [
+      {
+        "content": [
+          {
+            "annotations": [
+              {
+                "style": "cheerful and friendly",
+                "type": "speech_metadata"
+              }
+            ],
+            "text": "Hello there. <short pause> This is a synthetic sentence.",
+            "type": "text"
+          }
+        ],
+        "type": "user_input"
+      }
+    ],
+    "model": "gemini-3.8-flash-tts",
+    "response_format": {
+      "type": "audio"
+    },
+    "store": false
+  },
+  "model": "gemini-3.8-flash-tts"
+}

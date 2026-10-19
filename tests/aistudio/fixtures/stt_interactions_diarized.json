@@ -1,0 +1,53 @@
+{
+ "id": "interactions/SYNTHETIC",
+ "status": "completed",
+ "steps": [
+  {
+   "id": "step_001",
+   "type": "model_output",
+   "content": [
+    {
+     "type": "text",
+     "text": "Привет, как дела? Хорошо, спасибо.",
+     "annotations": [
+      {
+       "type": "word_info",
+       "text": "Привет,",
+       "start_offset": "0.100s",
+       "end_offset": "0.500s",
+       "speaker": "spk_1"
+      },
+      {
+       "type": "word_info",
+       "text": "как",
+       "start_offset": "0.600s",
+       "end_offset": "0.850s",
+       "speaker": "spk_1"
+      },
+      {
+       "type": "word_info",
+       "text": "дела?",
+       "start_offset": "0.900s",
+       "end_offset": "1.400s",
+       "speaker": "spk_1"
+      },
+      {
+       "type": "word_info",
+       "text": "Хорошо,",
+       "start_offset": "2.500s",
+       "end_offset": "3.000s",
+       "speaker": "spk_2"
+      },
+      {
+       "type": "word_info",
+       "text": "спасибо.",
+       "start_offset": "3.200s",
+       "end_offset": "3.900s",
+       "speaker": "spk_2"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

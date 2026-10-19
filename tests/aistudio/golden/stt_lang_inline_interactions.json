@@ -1,0 +1,22 @@
+{
+  "api": "interactions",
+  "body": {
+    "generation_config": {
+      "transcription_config": {
+        "language_codes": [
+          "ru-RU"
+        ]
+      }
+    },
+    "input": [
+      {
+        "data": "U1lOVEhFVElD",
+        "mime_type": "audio/wav",
+        "type": "audio"
+      }
+    ],
+    "model": "gemini-3.5-transcribe",
+    "store": false
+  },
+  "model": "gemini-3.5-transcribe"
+}

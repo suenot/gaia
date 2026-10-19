@@ -1,0 +1,30 @@
+{
+  "api": "generate-content",
+  "body": {
+    "contents": [
+      {
+        "parts": [
+          {
+            "speechMetadata": {
+              "style": "calm, warm"
+            },
+            "text": "Hello there. <short pause> This is a synthetic sentence."
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "generationConfig": {
+      "responseModalities": [
+        "AUDIO"
+      ],
+      "speechConfig": {
+        "languageCode": "ru-RU",
+        "voiceConfig": {
+          "voice": "voice_abc123"
+        }
+      }
+    }
+  },
+  "model": "gemini-3.8-flash-lite-tts"
+}

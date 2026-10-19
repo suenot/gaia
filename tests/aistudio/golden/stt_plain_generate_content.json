@@ -1,0 +1,24 @@
+{
+  "api": "generate-content",
+  "body": {
+    "contents": [
+      {
+        "parts": [
+          {
+            "fileData": {
+              "fileUri": "https://generativelanguage.googleapis.com/v1beta/files/SYNTHETIC",
+              "mimeType": "audio/wav"
+            }
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "generationConfig": {
+      "audioTranscriptionConfig": {
+        "languageCodes": []
+      }
+    }
+  },
+  "model": "gemini-3.5-transcribe"
+}

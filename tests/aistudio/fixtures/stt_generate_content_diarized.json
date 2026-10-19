@@ -1,0 +1,57 @@
+{
+ "candidates": [
+  {
+   "content": {
+    "role": "model",
+    "parts": [
+     {
+      "audioTranscription": {
+       "text": "Привет, как дела?",
+       "speakerLabel": "spk_1",
+       "words": [
+        {
+         "word": "Привет,",
+         "startOffset": "0.100s",
+         "endOffset": "0.500s"
+        },
+        {
+         "word": "как",
+         "startOffset": "0.600s",
+         "endOffset": "0.850s"
+        },
+        {
+         "word": "дела?",
+         "startOffset": "0.900s",
+         "endOffset": "1.400s"
+        }
+       ]
+      }
+     },
+     {
+      "audioTranscription": {
+       "text": "Хорошо, спасибо.",
+       "speakerLabel": "spk_2",
+       "words": [
+        {
+         "word": "Хорошо,",
+         "startOffset": "2.500s",
+         "endOffset": "3.000s"
+        },
+        {
+         "word": "спасибо.",
+         "startOffset": "3.200s",
+         "endOffset": "3.900s"
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "finishReason": "STOP"
+  }
+ ],
+ "usageMetadata": {
+  "promptTokenCount": 100,
+  "candidatesTokenCount": 12
+ }
+}

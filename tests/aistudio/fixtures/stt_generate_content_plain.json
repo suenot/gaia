@@ -1,0 +1,15 @@
+{
+ "candidates": [
+  {
+   "content": {
+    "role": "model",
+    "parts": [
+     {
+      "text": "Привет, как дела? Хорошо, спасибо."
+     }
+    ]
+   },
+   "finishReason": "STOP"
+  }
+ ]
+}

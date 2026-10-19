@@ -1,0 +1,20 @@
+{
+  "api": "interactions",
+  "body": {
+    "generation_config": {
+      "transcription_config": {
+        "language_codes": []
+      }
+    },
+    "input": [
+      {
+        "mime_type": "audio/wav",
+        "type": "audio",
+        "uri": "https://generativelanguage.googleapis.com/v1beta/files/SYNTHETIC"
+      }
+    ],
+    "model": "gemini-3.5-transcribe",
+    "store": false
+  },
+  "model": "gemini-3.5-transcribe"
+}

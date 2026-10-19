@@ -1,0 +1,26 @@
+{
+  "api": "generate-content",
+  "body": {
+    "contents": [
+      {
+        "parts": [
+          {
+            "text": "Hello there. <short pause> This is a synthetic sentence."
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "generationConfig": {
+      "responseModalities": [
+        "AUDIO"
+      ],
+      "speechConfig": {
+        "voiceConfig": {
+          "voice": "voicekey_SYNTHETIC0123456789"
+        }
+      }
+    }
+  },
+  "model": "gemini-3.8-flash-lite-tts"
+}

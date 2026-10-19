@@ -1,0 +1,29 @@
+{
+  "api": "interactions",
+  "body": {
+    "generation_config": {
+      "transcription_config": {
+        "language_codes": [
+          "ru-RU"
+        ],
+        "mode": {
+          "diarization_mode": "speaker",
+          "timestamp_granularities": [
+            "word"
+          ],
+          "type": "verbatim"
+        }
+      }
+    },
+    "input": [
+      {
+        "mime_type": "audio/wav",
+        "type": "audio",
+        "uri": "https://generativelanguage.googleapis.com/v1beta/files/SYNTHETIC"
+      }
+    ],
+    "model": "gemini-3.5-transcribe",
+    "store": false
+  },
+  "model": "gemini-3.5-transcribe"
+}

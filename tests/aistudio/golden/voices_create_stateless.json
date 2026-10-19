@@ -1,0 +1,17 @@
+{
+  "store": false,
+  "voice": {
+    "model": "gemini-3.8-flash-lite-tts",
+    "replicated": {
+      "consent_audio": {
+        "data": "Q09OU0VOVA==",
+        "mime_type": "audio/wav"
+      },
+      "source_audio": {
+        "data": "U1lOVEhFVElD",
+        "mime_type": "audio/wav"
+      }
+    },
+    "type": "replicated"
+  }
+}

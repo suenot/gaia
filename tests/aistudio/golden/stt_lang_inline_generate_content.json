@@ -1,0 +1,26 @@
+{
+  "api": "generate-content",
+  "body": {
+    "contents": [
+      {
+        "parts": [
+          {
+            "inlineData": {
+              "data": "U1lOVEhFVElD",
+              "mimeType": "audio/wav"
+            }
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "generationConfig": {
+      "audioTranscriptionConfig": {
+        "languageCodes": [
+          "ru-RU"
+        ]
+      }
+    }
+  },
+  "model": "gemini-3.5-transcribe"
+}
