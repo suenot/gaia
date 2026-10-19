@@ -97,8 +97,12 @@ python3 login_camoufox.py --bootstrap
 | `cookies_firefox.py`  | Extract & convert Firefox cookies → Playwright format |
 | `explore.py`          | Dev tool: deep-walk the DOM (incl. shadow roots) to find selectors if the UI changes |
 | `prompts/*.txt`       | Example prompts (image, motion, text-video, flow) |
-| `output/`             | Saved media (images, videos, audio, slide-deck PDFs) |
-| `debug/`              | Step screenshots (only with `--debug`) |
+| `aistudio/`, `tests/aistudio/`, `docs/aistudio-speech-research.md` | AI Studio speech package, its offline test suite and the research notes behind it |
+| `probe_notebook_url.py` | Diagnostic: walks the candidate NotebookLM / Gemini Notebook URLs and reports which one shows the notebook list (see Notes) |
+| `diag_*.py` (5 files) | One-off Gemini composer diagnostics (attach, composer, network, send, submit); read before running |
+| `gen_vertical_batch.py`, `gen_vertical_fixes*.py` (9 files in all) | One-off scripts for a single Shorts frame batch and its eight fix passes; not general tools, and they contain paths from the author's machine |
+| `assets/`, `notebooklm/` | Sample images; a stored brief |
+| `output/`, `debug/` | Created at run time and git-ignored: saved media (images, videos, audio, slide-deck PDFs) and step screenshots (only with `--debug`) |
 
 ## Usage
 
@@ -192,11 +196,12 @@ Key flags: `--project` (URL or bare id; or set GAIA_FLOW_PROJECT), `--mode`
 Approve → clip downloaded from the `labs.google/fx/api/.../media…` URL via
 `context.request`.
 
-## NotebookLM (podcasts & slide decks)
+## NotebookLM (podcasts, slide decks & video overviews)
 
 `notebooklm_gen.py` creates a notebook, adds sources, and generates **Audio
-Overviews (podcasts)** and **Slide Decks** via their Customize popovers — in any
-output language and with a steering prompt — then downloads the `.m4a` / `.pdf`.
+Overviews (podcasts)**, **Slide Decks** and **Video Overviews** via their
+Customize popovers — in any output language and with a steering prompt — then
+downloads the `.m4a` / `.pdf` / `.mp4`.
 
 ```bash
 # Paste text as a source, make a Russian audio overview with a focus prompt
@@ -209,15 +214,24 @@ python3 notebooklm_gen.py --discover "history of the Voyager program" --audio --
 # Add files as sources (PDF/audio/etc. uploaded; .txt/.md/.csv pasted)
 python3 notebooklm_gen.py --source-file paper.pdf --slides --slides-prompt "10 concise slides"
 
+# Video Overview: the storyboard goes into --video-prompt
+python3 notebooklm_gen.py --source-file paper.pdf --video \
+    --video-format Explainer --video-prompt "Walk through the method step by step"
+
 # Operate on an existing notebook / just re-download ready artifacts
 python3 notebooklm_gen.py --notebook <url> --download-only --audio --slides
 ```
 
 Sources: `--source-text`, `--source-url` (×N), `--source-file` (×N),
-`--discover "query"`. Artifacts: `--audio`, `--slides`, `--language`,
+`--discover "query"`. Artifacts: `--audio`, `--slides`, `--video`, `--language`,
 `--instructions`, `--slides-prompt`, `--audio-format` (Deep Dive/Brief/Critique/
-Debate), `--audio-length` (Short/Default/Long). Verified: an ~18-min Russian
-Audio Overview (`.m4a`) and a 5-page Slide Deck (`.pdf`).
+Debate), `--audio-length` (Short/Default/Long), `--video-prompt` (what the video
+should focus on), `--video-format` (Cinematic/Explainer/Short, default Short).
+By default the trailing "Google NotebookLM" outro (about 2 s) is detected and
+cut off a Video Overview; `--keep-outro` keeps it (cutting needs `ffmpeg` and
+`ffprobe`). Verified: an ~18-min Russian Audio Overview (`.m4a`) and a 5-page
+Slide Deck (`.pdf`). Video Overviews are supported (format fixes in `83ca281`
+and `ffa4ffd`, August 2026) and were not re-run for this update.
 
 ### Slide-deck quality checks (optional)
 
@@ -471,6 +485,13 @@ create a replicated voice; the first replication is a manual step by the account
   labels. That's model behavior, not a script bug.
 - If you see "not logged in", the chosen profile's Google session may be expired
   or it's a different account — pick another `--profile`.
+- NotebookLM was renamed Gemini Notebook, and `notebooklm.google.com` has been seen
+  serving a marketing landing page instead of the app. `notebooklm_gen.py` still
+  starts from `https://notebooklm.google.com`; `probe_notebook_url.py` (added
+  2026-08-07) checks which candidate URL shows the notebook list. The NotebookLM
+  commands have not been re-verified since early August 2026.
+- The `gen_vertical_*.py` and `diag_*.py` scripts are one-off and are not covered
+  by tests; only `aistudio/` has a test suite (`tests/aistudio/`, offline).
 - Keep the session/cookies private; they grant access to the Google account.
 
 ## License
