@@ -7,6 +7,21 @@ __pycache__/
 .camoufox_fp.pkl
 venv/
 
+# AI Studio speech (aistudio_speech.py): never commit secrets, voice keys, voice
+# registries or audio. Keys/registries belong in ~/.config/gaia/, outputs outside the repo.
+.env*
+aistudio.env
+*.voicekey
+voices.json
+*.wav
+*.ogg
+*.mp3
+*.flac
+*.m4a
+*.aac
+*.opus
+.pytest_cache/
+
 # dev-artifacts (sdvg)
 node_modules/
 dist/
