@@ -54,6 +54,8 @@ JS_COLLECT_IMAGES = r"""
     const src = im.currentSrc || im.src || '';
     if (!src) continue;
     if (w < 256 || h < 256) continue;
+    // skip our own attachments shown in the sent user message (not a result)
+    if (im.closest('user-query, .user-query-container, [class*="user-query"]')) continue;
     const ok = src.includes('googleusercontent.com')
             || src.startsWith('blob:')
             || src.startsWith('data:image');
@@ -88,7 +90,7 @@ async (src) => {
 """
 
 
-async def wait_for_images(page, baseline: set, timeout_s: int, quiet_s: float) -> List[dict]:
+async def wait_for_images(page, baseline: set, timeout_s: int, quiet_s: float, ref_sizes: frozenset = frozenset()) -> List[dict]:
     """Poll until new generated images appear and stop changing for `quiet_s`."""
     deadline = time.time() + timeout_s
     last_change = None
@@ -100,6 +102,8 @@ async def wait_for_images(page, baseline: set, timeout_s: int, quiet_s: float) -
             imgs = []
         changed = False
         for im in imgs:
+            if (im["w"], im["h"]) in ref_sizes:
+                continue  # echo of an attached reference, not a generated image
             if im["src"] in baseline or im["src"] in seen:
                 continue
             seen[im["src"]] = im
@@ -146,6 +150,28 @@ async def _grab_one(page, im: dict) -> Optional[bytes]:
     except Exception as e:  # noqa: BLE001
         log(f"  screenshot grab failed: {str(e).splitlines()[0][:60]}")
     return None
+
+
+def _ref_sizes(refs) -> frozenset:
+    """Pixel sizes of the attached references, to ignore their echo in the chat."""
+    out = set()
+    try:
+        from PIL import Image
+        for r in refs:
+            with Image.open(r) as im:
+                out.add(im.size)
+    except Exception:  # noqa: BLE001  (Pillow missing: fall back to macOS sips)
+        import subprocess
+        for r in refs:
+            try:
+                o = subprocess.run(["sips", "-g", "pixelWidth", "-g", "pixelHeight", str(r)],
+                                   capture_output=True, text=True, timeout=10).stdout
+                w = int(o.split("pixelWidth:")[1].split()[0])
+                h = int(o.split("pixelHeight:")[1].split()[0])
+                out.add((w, h))
+            except Exception:  # noqa: BLE001
+                pass
+    return frozenset(out)
 
 
 async def run(args) -> int:
@@ -209,6 +235,11 @@ async def run(args) -> int:
                     await hold(page)
                 return 6
             log("References attached ✓")
+            # thumbnails of the attachments are not results: add them to the baseline
+            try:
+                baseline |= {im["src"] for im in await page.evaluate(JS_COLLECT_IMAGES)}
+            except Exception:  # noqa: BLE001
+                pass
 
         await shot(page, "03_before_type", args.debug)
         if not await fill_prompt(page, prompt) or not await send_message(page):
@@ -220,7 +251,7 @@ async def run(args) -> int:
         log("Prompt sent; waiting for image generation...")
         await shot(page, "04_sent", args.debug)
 
-        images = await wait_for_images(page, baseline, timeout_s=args.timeout, quiet_s=args.quiet)
+        images = await wait_for_images(page, baseline, timeout_s=args.timeout, quiet_s=args.quiet, ref_sizes=_ref_sizes(refs))
         await shot(page, "05_result", args.debug)
 
         if not images:
